@@ -1,7 +1,9 @@
+import { getStore } from "@netlify/blobs";
+
 export default async (req) => {
   try {
     // =========================================================
-    // 1. VERIFICAÇÃO DA FUNCTION
+    // 1. VERIFICAR MÉTODO
     // =========================================================
 
     if (req.method !== "POST") {
@@ -11,7 +13,7 @@ export default async (req) => {
     }
 
     // =========================================================
-    // 2. RECEBER MENSAGEM DO TELEGRAM
+    // 2. RECEBER ATUALIZAÇÃO DO TELEGRAM
     // =========================================================
 
     const update = await req.json();
@@ -21,7 +23,6 @@ export default async (req) => {
       JSON.stringify(update)
     );
 
-    // Ignora atualizações que não possuem mensagem
     if (!update.message) {
       return new Response("OK", {
         status: 200
@@ -32,7 +33,7 @@ export default async (req) => {
     const texto = update.message.text || "";
 
     // =========================================================
-    // 3. TOKEN DO TELEGRAM
+    // 3. TOKEN TELEGRAM
     // =========================================================
 
     const token = process.env.TELEGRAM_TOKEN;
@@ -43,10 +44,48 @@ export default async (req) => {
       );
     }
 
+    // =========================================================
+    // 4. BANCO DE DADOS NETLIFY BLOBS
+    // =========================================================
+
+    const store = getStore("investimentos");
+
+    const chaveCarteira = `carteira_${chatId}`;
+
+    // =========================================================
+    // 5. FUNÇÃO PARA LER CARTEIRA
+    // =========================================================
+
+    async function obterCarteira() {
+      const carteira = await store.get(
+        chaveCarteira,
+        {
+          type: "json"
+        }
+      );
+
+      if (!Array.isArray(carteira)) {
+        return [];
+      }
+
+      return carteira;
+    }
+
+    // =========================================================
+    // 6. FUNÇÃO PARA SALVAR CARTEIRA
+    // =========================================================
+
+    async function salvarCarteira(carteira) {
+      await store.setJSON(
+        chaveCarteira,
+        carteira
+      );
+    }
+
     let resposta = "";
 
     // =========================================================
-    // 4. /START E /AJUDA
+    // 7. START / AJUDA
     // =========================================================
 
     if (
@@ -61,8 +100,17 @@ Bem-vindo! 👋
 📈 COTAÇÃO
 /cotacao BBAS3
 
-📊 CARTEIRA
+📊 MINHA CARTEIRA
 /carteira
+
+➕ ADICIONAR ATIVOS
+/adicionar BBAS3 PETR4 VALE3
+
+➖ REMOVER ATIVO
+/remover PETR4
+
+🗑️ LIMPAR CARTEIRA
+/limparcarteira
 
 🛒 COMPRAR
 /comprar BBAS3 10 18.38
@@ -74,40 +122,332 @@ Bem-vindo! 👋
 /dividendo BBAS3 15.50
 
 📰 NOTÍCIAS
-/noticias BBAS3
+/noticias
 
 📜 HISTÓRICO
 /historico
 
 📊 RESUMO
 /resumo
+
+🇧🇷 IBOVESPA
+Será acompanhado automaticamente.
 `;
     }
 
     // =========================================================
-    // 5. COTAÇÃO
+    // 8. ADICIONAR ATIVOS
     // =========================================================
 
-    else if (texto.startsWith("/cotacao")) {
+    else if (
+      texto.startsWith("/adicionar")
+    ) {
 
-      const partes = texto
-        .trim()
-        .split(/\s+/);
+      const partes =
+        texto.trim().split(/\s+/);
 
-      if (!partes[1]) {
+      const ativos =
+        partes
+          .slice(1)
+          .map((ativo) =>
+            ativo
+              .toUpperCase()
+              .replace(/[^A-Z0-9]/g, "")
+          )
+          .filter(Boolean);
 
-        resposta =
-          "❌ Informe o código do ativo.\n\n" +
-          "Exemplo:\n/cotacao BBAS3";
+      if (ativos.length === 0) {
+
+        resposta = `
+❌ Informe pelo menos um ativo.
+
+Exemplo:
+
+/adicionar BBAS3 PETR4 VALE3
+`;
 
       } else {
 
-        const ticker =
-          partes[1].toUpperCase();
+        const carteira =
+          await obterCarteira();
 
-        // -----------------------------------------------------
-        // BRAPI
-        // -----------------------------------------------------
+        const adicionados = [];
+        const existentes = [];
+
+        for (const ativo of ativos) {
+
+          if (
+            carteira.includes(ativo)
+          ) {
+            existentes.push(ativo);
+          } else {
+            carteira.push(ativo);
+            adicionados.push(ativo);
+          }
+        }
+
+        await salvarCarteira(carteira);
+
+        resposta =
+          "✅ CARTEIRA ATUALIZADA\n\n";
+
+        if (adicionados.length > 0) {
+
+          resposta +=
+            "➕ Adicionados:\n";
+
+          for (
+            const ativo of adicionados
+          ) {
+            resposta +=
+              `• ${ativo}\n`;
+          }
+
+          resposta += "\n";
+        }
+
+        if (existentes.length > 0) {
+
+          resposta +=
+            "ℹ️ Já estavam cadastrados:\n";
+
+          for (
+            const ativo of existentes
+          ) {
+            resposta +=
+              `• ${ativo}\n`;
+          }
+
+          resposta += "\n";
+        }
+
+        resposta +=
+          `📊 Total de ativos: ${carteira.length}`;
+      }
+    }
+
+    // =========================================================
+    // 9. REMOVER ATIVO
+    // =========================================================
+
+    else if (
+      texto.startsWith("/remover")
+    ) {
+
+      const partes =
+        texto.trim().split(/\s+/);
+
+      const ativos =
+        partes
+          .slice(1)
+          .map((ativo) =>
+            ativo
+              .toUpperCase()
+              .replace(/[^A-Z0-9]/g, "")
+          )
+          .filter(Boolean);
+
+      if (ativos.length === 0) {
+
+        resposta = `
+❌ Informe o ativo que deseja remover.
+
+Exemplo:
+
+/remover PETR4
+`;
+
+      } else {
+
+        let carteira =
+          await obterCarteira();
+
+        const removidos = [];
+        const naoEncontrados = [];
+
+        for (const ativo of ativos) {
+
+          if (
+            carteira.includes(ativo)
+          ) {
+
+            carteira =
+              carteira.filter(
+                (item) =>
+                  item !== ativo
+              );
+
+            removidos.push(ativo);
+
+          } else {
+
+            naoEncontrados.push(
+              ativo
+            );
+          }
+        }
+
+        await salvarCarteira(
+          carteira
+        );
+
+        resposta =
+          "📊 CARTEIRA ATUALIZADA\n\n";
+
+        if (
+          removidos.length > 0
+        ) {
+
+          resposta +=
+            "➖ Removidos:\n";
+
+          for (
+            const ativo of removidos
+          ) {
+            resposta +=
+              `• ${ativo}\n`;
+          }
+
+          resposta += "\n";
+        }
+
+        if (
+          naoEncontrados.length > 0
+        ) {
+
+          resposta +=
+            "❓ Não encontrados:\n";
+
+          for (
+            const ativo of naoEncontrados
+          ) {
+            resposta +=
+              `• ${ativo}\n`;
+          }
+
+          resposta += "\n";
+        }
+
+        resposta +=
+          `📈 Ativos restantes: ${carteira.length}`;
+      }
+    }
+
+    // =========================================================
+    // 10. MOSTRAR CARTEIRA
+    // =========================================================
+
+    else if (
+      texto === "/carteira"
+    ) {
+
+      const carteira =
+        await obterCarteira();
+
+      if (
+        carteira.length === 0
+      ) {
+
+        resposta = `
+📊 SUA CARTEIRA
+
+Sua carteira ainda está vazia.
+
+Para adicionar ativos:
+
+/adicionar BBAS3 PETR4 VALE3
+`;
+
+      } else {
+
+        resposta =
+          "📊 SUA CARTEIRA\n\n";
+
+        carteira.forEach(
+          (ativo, indice) => {
+
+            resposta +=
+              `${indice + 1}️⃣ ${ativo}\n`;
+          }
+        );
+
+        resposta +=
+          `\n📈 Total: ${carteira.length} ativos`;
+      }
+    }
+
+    // =========================================================
+    // 11. LIMPAR CARTEIRA
+    // =========================================================
+
+    else if (
+      texto === "/limparcarteira"
+    ) {
+
+      await salvarCarteira([]);
+
+      resposta = `
+🗑️ CARTEIRA LIMPA
+
+Todos os ativos foram removidos.
+
+Você pode cadastrar novamente usando:
+
+/adicionar BBAS3 PETR4 VALE3
+`;
+    }
+
+    // =========================================================
+    // 12. COTAÇÃO
+    // =========================================================
+
+    else if (
+      texto.startsWith("/cotacao")
+    ) {
+
+      const partes =
+        texto.trim().split(/\s+/);
+
+      let ticker =
+        partes[1];
+
+      // Se não informou ativo,
+      // usa o primeiro ativo da carteira
+      if (!ticker) {
+
+        const carteira =
+          await obterCarteira();
+
+        if (
+          carteira.length === 0
+        ) {
+
+          resposta = `
+❌ Sua carteira está vazia.
+
+Use:
+
+/adicionar BBAS3 PETR4
+`;
+
+        } else {
+
+          ticker =
+            carteira[0];
+        }
+      }
+
+      if (
+        resposta === ""
+      ) {
+
+        ticker =
+          ticker
+            .toUpperCase()
+            .replace(
+              /[^A-Z0-9]/g,
+              ""
+            );
 
         const brapiToken =
           process.env.BRAPI_TOKEN;
@@ -117,8 +457,8 @@ Bem-vindo! 👋
             ticker
           )}`;
 
-        // Se existir token, adiciona na URL
         if (brapiToken) {
+
           url +=
             `?token=${encodeURIComponent(
               brapiToken
@@ -159,15 +499,6 @@ Bem-vindo! 👋
         const dados =
           await response.json();
 
-        console.log(
-          "Dados BRAPI:",
-          JSON.stringify(dados)
-        );
-
-        // -----------------------------------------------------
-        // VERIFICAR RESULTADO
-        // -----------------------------------------------------
-
         if (
           !dados.results ||
           dados.results.length === 0
@@ -202,16 +533,10 @@ Bem-vindo! 👋
               ? "🟢"
               : "🔴";
 
-          const nome =
-            ativo.longName ||
-            ativo.shortName ||
-            ativo.symbol ||
-            ticker;
-
           resposta = `
 📊 ${ativo.symbol || ticker}
 
-${nome}
+${ativo.longName || ativo.shortName || ""}
 
 💰 Preço: ${preco}
 
@@ -222,30 +547,7 @@ ${emoji} Variação: ${variacao.toFixed(2)}%
     }
 
     // =========================================================
-    // 6. CARTEIRA
-    // =========================================================
-
-    else if (texto === "/carteira") {
-
-      resposta = `
-📊 SUA CARTEIRA
-
-🚧 Módulo em desenvolvimento.
-
-Em breve você poderá visualizar:
-
-• 📈 Ativos
-• 🔢 Quantidades
-• 💰 Preço médio
-• 💵 Patrimônio
-• 📊 Lucro/prejuízo
-• 💸 Dividendos
-• 📈 Rentabilidade
-`;
-    }
-
-    // =========================================================
-    // 7. COMPRAR
+    // 13. COMPRAR
     // =========================================================
 
     else if (
@@ -255,7 +557,9 @@ Em breve você poderá visualizar:
       const partes =
         texto.trim().split(/\s+/);
 
-      if (partes.length < 4) {
+      if (
+        partes.length < 4
+      ) {
 
         resposta = `
 🛒 REGISTRAR COMPRA
@@ -279,7 +583,10 @@ Exemplo:
 
         const preco =
           Number(
-            partes[3].replace(",", ".")
+            partes[3].replace(
+              ",",
+              "."
+            )
           );
 
         if (
@@ -308,14 +615,14 @@ Exemplo:
 
 💵 Total: R$ ${total.toFixed(2)}
 
-⚠️ O armazenamento da compra será conectado na próxima etapa.
+🚧 O registro definitivo das operações será conectado na próxima etapa.
 `;
         }
       }
     }
 
     // =========================================================
-    // 8. VENDER
+    // 14. VENDER
     // =========================================================
 
     else if (
@@ -325,7 +632,9 @@ Exemplo:
       const partes =
         texto.trim().split(/\s+/);
 
-      if (partes.length < 4) {
+      if (
+        partes.length < 4
+      ) {
 
         resposta = `
 💵 REGISTRAR VENDA
@@ -349,7 +658,10 @@ Exemplo:
 
         const preco =
           Number(
-            partes[3].replace(",", ".")
+            partes[3].replace(
+              ",",
+              "."
+            )
           );
 
         if (
@@ -378,14 +690,14 @@ Exemplo:
 
 💵 Total: R$ ${total.toFixed(2)}
 
-⚠️ O armazenamento da venda será conectado na próxima etapa.
+🚧 O registro definitivo das operações será conectado na próxima etapa.
 `;
         }
       }
     }
 
     // =========================================================
-    // 9. DIVIDENDO
+    // 15. DIVIDENDO
     // =========================================================
 
     else if (
@@ -395,7 +707,9 @@ Exemplo:
       const partes =
         texto.trim().split(/\s+/);
 
-      if (partes.length < 3) {
+      if (
+        partes.length < 3
+      ) {
 
         resposta = `
 💰 REGISTRAR DIVIDENDO
@@ -416,7 +730,10 @@ Exemplo:
 
         const valor =
           Number(
-            partes[2].replace(",", ".")
+            partes[2].replace(
+              ",",
+              "."
+            )
           );
 
         if (
@@ -425,7 +742,7 @@ Exemplo:
         ) {
 
           resposta =
-            "❌ Valor do dividendo inválido.";
+            "❌ Valor inválido.";
 
         } else {
 
@@ -436,58 +753,60 @@ Exemplo:
 
 💵 Valor recebido: R$ ${valor.toFixed(2)}
 
-⚠️ O armazenamento do dividendo será conectado na próxima etapa.
+🚧 O registro definitivo será conectado na próxima etapa.
 `;
         }
       }
     }
 
     // =========================================================
-    // 10. NOTÍCIAS
+    // 16. NOTÍCIAS
     // =========================================================
 
     else if (
       texto.startsWith("/noticias")
     ) {
 
-      const partes =
-        texto.trim().split(/\s+/);
+      const carteira =
+        await obterCarteira();
 
-      if (!partes[1]) {
+      if (
+        carteira.length === 0
+      ) {
 
         resposta = `
 📰 NOTÍCIAS
 
-Informe o ativo.
+Sua carteira está vazia.
 
-Exemplo:
+Adicione seus ativos:
 
-/noticias BBAS3
+/adicionar BBAS3 PETR4 VALE3
 `;
 
       } else {
 
-        const ticker =
-          partes[1].toUpperCase();
-
         resposta = `
-📰 NOTÍCIAS — ${ticker}
+📰 NOTÍCIAS DOS SEUS ATIVOS
 
-🚧 Módulo de notícias em desenvolvimento.
+Seus ativos cadastrados:
 
-Em breve:
+${carteira
+  .map(
+    (ativo) =>
+      `• ${ativo}`
+  )
+  .join("\n")}
 
-• 📰 Notícias recentes
-• 📅 Data
-• 🌐 Fonte
-• 📝 Resumo
-• 📈 Possível impacto no ativo
+🇧🇷 IBOVESPA
+
+🚧 O sistema automático de notícias será conectado na próxima etapa.
 `;
       }
     }
 
     // =========================================================
-    // 11. HISTÓRICO
+    // 17. HISTÓRICO
     // =========================================================
 
     else if (
@@ -497,45 +816,45 @@ Em breve:
       resposta = `
 📜 HISTÓRICO
 
-🚧 Ainda não existem operações armazenadas na nuvem.
-
-Em breve serão exibidos:
-
-🛒 Compras
-💵 Vendas
-💰 Dividendos
-📅 Datas
-📊 Valores
+🚧 O histórico de compras, vendas e dividendos será conectado na próxima etapa.
 `;
     }
 
     // =========================================================
-    // 12. RESUMO
+    // 18. RESUMO
     // =========================================================
 
     else if (
       texto === "/resumo"
     ) {
 
+      const carteira =
+        await obterCarteira();
+
       resposta = `
-📊 RESUMO DOS INVESTIMENTOS
+📊 RESUMO
 
-🚧 Módulo em desenvolvimento.
+📈 Ativos cadastrados: ${carteira.length}
 
-Em breve:
+${
+  carteira.length > 0
+    ? carteira
+        .map(
+          (ativo) =>
+            `• ${ativo}`
+        )
+        .join("\n")
+    : "Nenhum ativo cadastrado."
+}
 
-💰 Patrimônio total
-📈 Lucro/prejuízo
-💵 Dividendos recebidos
-📊 Rentabilidade
-📈 Evolução mensal
-🇧🇷 Ibovespa
-🚨 Alertas
+🇧🇷 IBOVESPA
+
+🚧 Resumo financeiro completo será conectado na próxima etapa.
 `;
     }
 
     // =========================================================
-    // 13. COMANDO DESCONHECIDO
+    // 19. COMANDO DESCONHECIDO
     // =========================================================
 
     else {
@@ -550,7 +869,7 @@ Digite:
     }
 
     // =========================================================
-    // 14. ENVIAR RESPOSTA PARA O TELEGRAM
+    // 20. ENVIAR RESPOSTA AO TELEGRAM
     // =========================================================
 
     const telegramResponse =
@@ -560,7 +879,8 @@ Digite:
           method: "POST",
 
           headers: {
-            "Content-Type": "application/json"
+            "Content-Type":
+              "application/json"
           },
 
           body: JSON.stringify({
@@ -570,7 +890,9 @@ Digite:
         }
       );
 
-    if (!telegramResponse.ok) {
+    if (
+      !telegramResponse.ok
+    ) {
 
       const erroTelegram =
         await telegramResponse.text();
@@ -581,10 +903,6 @@ Digite:
       );
     }
 
-    // =========================================================
-    // 15. FINALIZAR FUNCTION
-    // =========================================================
-
     return new Response(
       "OK",
       {
@@ -593,10 +911,6 @@ Digite:
     );
 
   } catch (erro) {
-
-    // =========================================================
-    // TRATAMENTO DE ERROS
-    // =========================================================
 
     console.error(
       "ERRO:",
