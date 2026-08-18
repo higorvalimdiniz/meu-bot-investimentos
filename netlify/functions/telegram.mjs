@@ -1,20 +1,29 @@
 import { getStore } from "@netlify/blobs";
 
+// =====================================================
+// BOT TELEGRAM - MEU BOT DE INVESTIMENTOS
+// =====================================================
+
 export default async (req) => {
+
   try {
-    // =====================================================
+
+    // ===================================================
     // MÉTODO
-    // =====================================================
+    // ===================================================
 
     if (req.method !== "POST") {
-      return new Response("BOT TELEGRAM ONLINE!", {
-        status: 200
-      });
+
+      return new Response(
+        "BOT TELEGRAM ONLINE!",
+        { status: 200 }
+      );
+
     }
 
-    // =====================================================
+    // ===================================================
     // UPDATE TELEGRAM
-    // =====================================================
+    // ===================================================
 
     const update = await req.json();
 
@@ -24,31 +33,41 @@ export default async (req) => {
     );
 
     if (!update.message) {
-      return new Response("OK", {
-        status: 200
-      });
+
+      return new Response(
+        "OK",
+        { status: 200 }
+      );
+
     }
 
-    const chatId = update.message.chat.id;
-    const texto = (update.message.text || "").trim();
+    const chatId =
+      update.message.chat.id;
 
-    // =====================================================
-    // TOKEN
-    // =====================================================
+    const texto =
+      update.message.text || "";
 
-    const token = process.env.TELEGRAM_TOKEN;
+    // ===================================================
+    // TOKEN TELEGRAM
+    // ===================================================
+
+    const token =
+      process.env.TELEGRAM_TOKEN;
 
     if (!token) {
+
       throw new Error(
         "TELEGRAM_TOKEN não configurado na Netlify."
       );
+
     }
 
-    // =====================================================
+    // ===================================================
     // NETLIFY BLOBS
-    // =====================================================
+    // ===================================================
 
-    const store = getStore("investimentos");
+    const store =
+      getStore("investimentos");
 
     const chaveCarteira =
       `carteira_${chatId}`;
@@ -62,136 +81,192 @@ export default async (req) => {
     const chaveNoticias =
       `noticias_enviadas_${chatId}`;
 
-    // =====================================================
-    // BANCO
-    // =====================================================
+    // ===================================================
+    // FUNÇÕES DO BANCO
+    // ===================================================
 
     async function obterCarteira() {
-      const dados = await store.get(
-        chaveCarteira,
-        {
-          type: "json"
-        }
-      );
+
+      const dados =
+        await store.get(
+          chaveCarteira,
+          {
+            type: "json"
+          }
+        );
 
       return Array.isArray(dados)
         ? dados
         : [];
     }
 
-    async function salvarCarteira(carteira) {
+    async function salvarCarteira(
+      carteira
+    ) {
+
       await store.setJSON(
         chaveCarteira,
         carteira
       );
+
     }
 
     async function obterOperacoes() {
-      const dados = await store.get(
-        chaveOperacoes,
-        {
-          type: "json"
-        }
-      );
+
+      const dados =
+        await store.get(
+          chaveOperacoes,
+          {
+            type: "json"
+          }
+        );
 
       return Array.isArray(dados)
         ? dados
         : [];
     }
 
-    async function salvarOperacoes(operacoes) {
+    async function salvarOperacoes(
+      operacoes
+    ) {
+
       await store.setJSON(
         chaveOperacoes,
         operacoes
       );
+
     }
 
     async function obterDividendos() {
-      const dados = await store.get(
-        chaveDividendos,
-        {
-          type: "json"
-        }
-      );
+
+      const dados =
+        await store.get(
+          chaveDividendos,
+          {
+            type: "json"
+          }
+        );
 
       return Array.isArray(dados)
         ? dados
         : [];
     }
 
-    async function salvarDividendos(dividendos) {
+    async function salvarDividendos(
+      dividendos
+    ) {
+
       await store.setJSON(
         chaveDividendos,
         dividendos
       );
+
     }
 
-    // =====================================================
+    // ===================================================
     // CONVERTER NÚMERO
-    // =====================================================
+    // ===================================================
 
     function converterNumero(valor) {
+
       if (
         valor === undefined ||
         valor === null ||
         valor === ""
       ) {
+
         return NaN;
+
       }
 
-      let textoValor =
-        String(valor).trim();
+      let numero =
+        String(valor)
+          .trim();
+
+      // Exemplo:
+      // 1.234,56 -> 1234.56
 
       if (
-        textoValor.includes(".") &&
-        textoValor.includes(",")
+        numero.includes(".") &&
+        numero.includes(",")
       ) {
-        textoValor =
-          textoValor
+
+        numero =
+          numero
             .replace(/\./g, "")
             .replace(",", ".");
-      } else {
-        textoValor =
-          textoValor.replace(",", ".");
+
       }
 
-      return Number(textoValor);
+      else {
+
+        numero =
+          numero.replace(",", ".");
+
+      }
+
+      return Number(numero);
+
     }
 
-    // =====================================================
+    // ===================================================
     // DINHEIRO
-    // =====================================================
+    // ===================================================
 
     function dinheiro(valor) {
-      return Number(valor || 0).toLocaleString(
+
+      return Number(
+        valor || 0
+      ).toLocaleString(
         "pt-BR",
         {
           style: "currency",
           currency: "BRL"
         }
       );
+
     }
 
-    // =====================================================
+    // ===================================================
     // PERCENTUAL
-    // =====================================================
+    // ===================================================
 
     function percentual(valor) {
-      const numero =
-        Number(valor || 0);
 
-      return numero.toLocaleString(
+      return Number(
+        valor || 0
+      ).toLocaleString(
         "pt-BR",
         {
           minimumFractionDigits: 2,
           maximumFractionDigits: 2
         }
       ) + "%";
+
     }
 
-    // =====================================================
+    // ===================================================
+    // ESCAPAR HTML
+    // ===================================================
+
+    function escaparHTML(
+      texto
+    ) {
+
+      return String(
+        texto || ""
+      )
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+
+    }
+
+    // ===================================================
     // CALCULAR POSIÇÃO
-    // =====================================================
+    // ===================================================
 
     function calcularPosicao(
       operacoes,
@@ -200,7 +275,7 @@ export default async (req) => {
 
       const operacoesAtivo =
         operacoes.filter(
-          (op) =>
+          op =>
             op.ativo === ativo
         );
 
@@ -219,22 +294,33 @@ export default async (req) => {
         ) {
 
           quantidadeComprada +=
-            Number(op.quantidade || 0);
+            Number(
+              op.quantidade || 0
+            );
 
           valorComprado +=
-            Number(op.total || 0);
+            Number(
+              op.total || 0
+            );
+
         }
 
-        if (
+        else if (
           op.tipo === "VENDA"
         ) {
 
           quantidadeVendida +=
-            Number(op.quantidade || 0);
+            Number(
+              op.quantidade || 0
+            );
 
           valorVendido +=
-            Number(op.total || 0);
+            Number(
+              op.total || 0
+            );
+
         }
+
       }
 
       const quantidadeAtual =
@@ -248,25 +334,42 @@ export default async (req) => {
           : 0;
 
       const valorInvestidoAtual =
-        quantidadeAtual *
-        precoMedio;
+        Math.max(
+          0,
+          quantidadeAtual
+        ) * precoMedio;
 
       return {
+
         quantidadeComprada,
+
         valorComprado,
+
         quantidadeVendida,
+
         valorVendido,
-        quantidadeAtual,
+
+        quantidadeAtual:
+          Math.max(
+            0,
+            quantidadeAtual
+          ),
+
         precoMedio,
+
         valorInvestidoAtual
+
       };
+
     }
 
-    // =====================================================
+    // ===================================================
     // BRAPI
-    // =====================================================
+    // ===================================================
 
-    async function consultarBrapi(ticker) {
+    async function consultarBrapi(
+      ticker
+    ) {
 
       const brapiToken =
         process.env.BRAPI_TOKEN;
@@ -277,10 +380,12 @@ export default async (req) => {
         )}`;
 
       if (brapiToken) {
+
         url +=
           `?token=${encodeURIComponent(
             brapiToken
           )}`;
+
       }
 
       console.log(
@@ -309,6 +414,7 @@ export default async (req) => {
         throw new Error(
           `BRAPI retornou ${response.status}: ${erro}`
         );
+
       }
 
       const dados =
@@ -318,15 +424,18 @@ export default async (req) => {
         !dados.results ||
         dados.results.length === 0
       ) {
+
         return null;
+
       }
 
       return dados.results[0];
+
     }
 
-    // =====================================================
+    // ===================================================
     // TELEGRAM
-    // =====================================================
+    // ===================================================
 
     async function enviarTelegram(
       mensagem
@@ -336,6 +445,7 @@ export default async (req) => {
         await fetch(
           `https://api.telegram.org/bot${token}/sendMessage`,
           {
+
             method: "POST",
 
             headers: {
@@ -344,12 +454,18 @@ export default async (req) => {
             },
 
             body: JSON.stringify({
+
               chat_id:
                 chatId,
 
               text:
-                mensagem
+                mensagem,
+
+              parse_mode:
+                "HTML"
+
             })
+
           }
         );
 
@@ -362,14 +478,20 @@ export default async (req) => {
           "Erro Telegram:",
           erro
         );
+
       }
+
     }
+
+    // ===================================================
+    // RESPOSTA
+    // ===================================================
 
     let resposta = "";
 
-    // =====================================================
+    // ===================================================
     // START / AJUDA
-    // =====================================================
+    // ===================================================
 
     if (
       texto === "/start" ||
@@ -377,63 +499,70 @@ export default async (req) => {
     ) {
 
       resposta = `
-📊 MEU BOT DE INVESTIMENTOS
+
+📊 <b>MEU BOT DE INVESTIMENTOS</b>
 
 Bem-vindo! 👋
 
-📈 COTAÇÃO
+📈 <b>COTAÇÃO</b>
 
 /cotacao BBAS3
 
-📊 CARTEIRA
+📊 <b>CARTEIRA</b>
 
 /carteira
 
-📥 IMPORTAR CARTEIRA
+📥 <b>IMPORTAR POSIÇÃO EXISTENTE</b>
 
 /importar BBAS3 15 283,20
 
-➕ ADICIONAR ATIVOS
+➕ <b>ADICIONAR ATIVOS</b>
 
 /adicionar BBAS3 PETR4 VALE3
 
-🛒 COMPRAR
+🛒 <b>COMPRAR</b>
 
 /comprar BBAS3 10 18,38
 
-💵 VENDER
+💵 <b>VENDER</b>
 
 /vender BBAS3 5 20
 
-💰 DIVIDENDO
+💰 <b>DIVIDENDO</b>
 
 /dividendo BBAS3 25,50
 
-📜 HISTÓRICO
+📜 <b>HISTÓRICO</b>
 
 /historico
 
-📊 RESUMO
+📊 <b>RESUMO</b>
 
 /resumo
 
-📰 NOTÍCIAS
+📰 <b>NOTÍCIAS</b>
 
 /noticias
 
-🗑️ REMOVER ATIVO
+🗑️ <b>REMOVER ATIVO</b>
 
 /remover BBAS3
 
-⚠️ LIMPAR TUDO
+🧹 <b>LIMPAR TUDO</b>
 
 /limparcarteira
+
+Também funciona:
+
+/limpar
+
 `;
+
     }
 
-    // =====================================================
-    // ADICIONAR ATIVOS
-    // =====================================================
+    // ===================================================
+    // ADICIONAR
+    // ===================================================
 
     else if (
       texto.startsWith("/adicionar")
@@ -441,13 +570,14 @@ Bem-vindo! 👋
 
       const partes =
         texto
+          .trim()
           .split(/\s+/);
 
       const ativos =
         partes
           .slice(1)
           .map(
-            (ativo) =>
+            ativo =>
               ativo
                 .toUpperCase()
                 .replace(
@@ -469,7 +599,9 @@ Exemplo:
 /adicionar BBAS3 PETR4 VALE3
 `;
 
-      } else {
+      }
+
+      else {
 
         const carteira =
           await obterCarteira();
@@ -493,7 +625,9 @@ Exemplo:
             adicionados.push(
               ativo
             );
+
           }
+
         }
 
         await salvarCarteira(
@@ -505,16 +639,18 @@ Exemplo:
         ) {
 
           resposta =
-            "ℹ️ Todos esses ativos já estão cadastrados.";
+            "ℹ️ Esses ativos já estão cadastrados.";
 
-        } else {
+        }
+
+        else {
 
           resposta = `
-✅ ATIVOS ADICIONADOS
+✅ <b>ATIVOS ADICIONADOS</b>
 
 ${adicionados
   .map(
-    (ativo) =>
+    ativo =>
       `• ${ativo}`
   )
   .join("\n")}
@@ -522,27 +658,32 @@ ${adicionados
 📊 Total:
 ${carteira.length} ativos
 `;
+
         }
+
       }
+
     }
 
-    // =====================================================
-    // IMPORTAR CARTEIRA
-    // =====================================================
+    // ===================================================
+    // IMPORTAR
+    // ===================================================
 
     else if (
       texto.startsWith("/importar")
     ) {
 
       const partes =
-        texto.split(/\s+/);
+        texto
+          .trim()
+          .split(/\s+/);
 
       if (
         partes.length < 4
       ) {
 
         resposta = `
-📥 IMPORTAR CARTEIRA
+📥 <b>IMPORTAR CARTEIRA</b>
 
 Use:
 
@@ -553,7 +694,9 @@ Exemplo:
 /importar BBAS3 15 283,20
 `;
 
-      } else {
+      }
+
+      else {
 
         const ativo =
           partes[1]
@@ -585,15 +728,12 @@ Exemplo:
           totalInvestido <= 0
         ) {
 
-          resposta = `
-❌ Dados inválidos.
+          resposta =
+            "❌ Dados inválidos.";
 
-Exemplo:
+        }
 
-/importar BBAS3 15 283,20
-`;
-
-        } else {
+        else {
 
           const carteira =
             await obterCarteira();
@@ -612,12 +752,12 @@ Exemplo:
           ) {
 
             resposta = `
-⚠️ ${ativo} JÁ POSSUI POSIÇÃO
+⚠️ <b>${ativo} JÁ POSSUI POSIÇÃO</b>
 
 Quantidade atual:
 ${posicao.quantidadeAtual}
 
-Preço médio atual:
+Preço médio:
 ${dinheiro(
   posicao.precoMedio
 )}
@@ -627,7 +767,9 @@ Para adicionar mais:
 /comprar ${ativo} QUANTIDADE PREÇO
 `;
 
-          } else {
+          }
+
+          else {
 
             if (
               !carteira.includes(
@@ -638,11 +780,12 @@ Para adicionar mais:
               carteira.push(
                 ativo
               );
-            }
 
-            await salvarCarteira(
-              carteira
-            );
+              await salvarCarteira(
+                carteira
+              );
+
+            }
 
             const precoMedio =
               totalInvestido /
@@ -671,6 +814,7 @@ Para adicionar mais:
 
               data:
                 new Date().toISOString()
+
             });
 
             await salvarOperacoes(
@@ -678,7 +822,7 @@ Para adicionar mais:
             );
 
             resposta = `
-✅ CARTEIRA IMPORTADA
+✅ <b>CARTEIRA IMPORTADA</b>
 
 📈 ${ativo}
 
@@ -697,27 +841,33 @@ ${dinheiro(
 
 ☁️ Salvo na nuvem.
 `;
+
           }
+
         }
+
       }
+
     }
 
-    // =====================================================
+    // ===================================================
     // REMOVER ATIVO
-    // =====================================================
+    // ===================================================
 
     else if (
       texto.startsWith("/remover")
     ) {
 
       const partes =
-        texto.split(/\s+/);
+        texto
+          .trim()
+          .split(/\s+/);
 
       const ativos =
         partes
           .slice(1)
           .map(
-            (ativo) =>
+            ativo =>
               ativo
                 .toUpperCase()
                 .replace(
@@ -739,174 +889,246 @@ Exemplo:
 /remover BBAS3
 `;
 
-      } else {
+      }
 
-        let carteira =
+      else {
+
+        const carteira =
           await obterCarteira();
 
-        let operacoes =
-          await obterOperacoes();
-
-        let dividendos =
-          await obterDividendos();
-
         const removidos = [];
+
+        const naoEncontrados = [];
 
         for (
           const ativo of ativos
         ) {
 
-          const existia =
+          if (
             carteira.includes(
               ativo
-            );
+            )
+          ) {
 
-          carteira =
-            carteira.filter(
-              (item) =>
-                item !== ativo
-            );
-
-          operacoes =
-            operacoes.filter(
-              (op) =>
-                op.ativo !== ativo
-            );
-
-          dividendos =
-            dividendos.filter(
-              (div) =>
-                div.ativo !== ativo
-            );
-
-          if (existia) {
             removidos.push(
               ativo
             );
+
           }
+
+          else {
+
+            naoEncontrados.push(
+              ativo
+            );
+
+          }
+
         }
+
+        const novaCarteira =
+          carteira.filter(
+            ativo =>
+              !ativos.includes(
+                ativo
+              )
+          );
 
         await salvarCarteira(
-          carteira
+          novaCarteira
         );
 
-        await salvarOperacoes(
-          operacoes
-        );
+        resposta = `
+🗑️ <b>ATIVOS REMOVIDOS</b>
 
-        await salvarDividendos(
-          dividendos
-        );
+${
+  removidos.length > 0
+    ? removidos
+        .map(
+          ativo =>
+            `✅ ${ativo}`
+        )
+        .join("\n")
+    : "Nenhum ativo encontrado."
+}
 
-        if (
-          removidos.length === 0
-        ) {
+${
+  naoEncontrados.length > 0
+    ? `
 
-          resposta = `
-ℹ️ Nenhum desses ativos estava cadastrado.
+ℹ️ Não cadastrados:
 
-Carteira continua com:
-${carteira.length} ativos.
-`;
-
-        } else {
-
-          resposta = `
-🗑️ ATIVOS REMOVIDOS
-
-${removidos
+${naoEncontrados
   .map(
-    (ativo) =>
+    ativo =>
       `• ${ativo}`
   )
-  .join("\n")}
-
-✅ A posição desses ativos também foi apagada.
+  .join("\n")}`
+    : ""
+}
 
 📊 Ativos restantes:
-${carteira.length}
+${novaCarteira.length}
 `;
-        }
+
       }
+
     }
 
-    // =====================================================
-    // LIMPAR CARTEIRA — APAGA TUDO
-    // =====================================================
+    // ===================================================
+    // LIMPAR CARTEIRA COMPLETAMENTE
+    // ===================================================
 
     else if (
-      texto === "/limparcarteira"
+      texto === "/limparcarteira" ||
+      texto === "/limpar"
     ) {
 
       console.log(
-        "🗑️ INICIANDO LIMPEZA COMPLETA:",
-        chatId
+        "🗑️ LIMPEZA COMPLETA INICIADA"
       );
 
-      // ===================================================
-      // APAGAR CARTEIRA
-      // ===================================================
+      try {
 
-      await store.delete(
-        chaveCarteira
-      );
+        // -----------------------------------------------
+        // APAGAR CARTEIRA
+        // -----------------------------------------------
 
-      // ===================================================
-      // APAGAR OPERAÇÕES
-      // ===================================================
+        await store.delete(
+          chaveCarteira
+        );
 
-      await store.delete(
-        chaveOperacoes
-      );
+        console.log(
+          `Carteira apagada: ${chaveCarteira}`
+        );
 
-      // ===================================================
-      // APAGAR DIVIDENDOS
-      // ===================================================
+        // -----------------------------------------------
+        // APAGAR OPERAÇÕES
+        // -----------------------------------------------
 
-      await store.delete(
-        chaveDividendos
-      );
+        await store.delete(
+          chaveOperacoes
+        );
 
-      // ===================================================
-      // APAGAR HISTÓRICO DE NOTÍCIAS
-      // ===================================================
+        console.log(
+          `Operações apagadas: ${chaveOperacoes}`
+        );
 
-      await store.delete(
-        chaveNoticias
-      );
+        // -----------------------------------------------
+        // APAGAR DIVIDENDOS
+        // -----------------------------------------------
 
-      console.log(
-        "✅ Todos os dados apagados."
-      );
+        await store.delete(
+          chaveDividendos
+        );
 
-      resposta = `
-🗑️ CARTEIRA TOTALMENTE LIMPA
+        console.log(
+          `Dividendos apagados: ${chaveDividendos}`
+        );
+
+        // -----------------------------------------------
+        // APAGAR HISTÓRICO DE NOTÍCIAS
+        // -----------------------------------------------
+
+        await store.delete(
+          chaveNoticias
+        );
+
+        console.log(
+          `Notícias apagadas: ${chaveNoticias}`
+        );
+
+        // -----------------------------------------------
+        // VERIFICAR
+        // -----------------------------------------------
+
+        const carteiraDepois =
+          await store.get(
+            chaveCarteira,
+            {
+              type: "json"
+            }
+          );
+
+        const operacoesDepois =
+          await store.get(
+            chaveOperacoes,
+            {
+              type: "json"
+            }
+          );
+
+        const dividendosDepois =
+          await store.get(
+            chaveDividendos,
+            {
+              type: "json"
+            }
+          );
+
+        console.log(
+          "Verificação após limpeza:",
+          {
+            carteira: carteiraDepois,
+            operacoes: operacoesDepois,
+            dividendos: dividendosDepois
+          }
+        );
+
+        resposta = `
+🗑️ <b>CARTEIRA COMPLETAMENTE LIMPA</b>
 
 ━━━━━━━━━━━━━━━━
 
-✅ Ativos removidos
-✅ Compras removidas
-✅ Vendas removidas
-✅ Dividendos removidos
-✅ Histórico de notícias removido
+✅ Todos os ativos foram removidos.
+
+✅ Todas as compras foram removidas.
+
+✅ Todas as vendas foram removidas.
+
+✅ Todos os dividendos foram removidos.
+
+✅ Histórico de notícias foi limpo.
 
 ━━━━━━━━━━━━━━━━
 
-📊 Sua carteira agora está vazia.
+📊 <b>CARTEIRA ZERADA</b>
 
-Você pode começar novamente usando:
+Agora você pode cadastrar tudo novamente.
+
+Exemplo:
 
 /importar BBAS3 15 283,20
 
 ou:
 
-/adicionar BBAS3 PETR4 VALE3
+/adicionar BBAS3 VALE3 ITUB4
 `;
+
+      }
+
+      catch (erro) {
+
+        console.error(
+          "❌ ERRO AO LIMPAR:",
+          erro
+        );
+
+        resposta = `
+❌ <b>ERRO AO LIMPAR A CARTEIRA</b>
+
+${escaparHTML(
+  erro.message
+)}
+`;
+
+      }
+
     }
 
-    // =====================================================
+    // ===================================================
     // CARTEIRA
-    // =====================================================
+    // ===================================================
 
     else if (
       texto === "/carteira"
@@ -923,7 +1145,7 @@ ou:
       ) {
 
         resposta = `
-📊 SUA CARTEIRA
+📊 <b>SUA CARTEIRA</b>
 
 ━━━━━━━━━━━━━━━━
 
@@ -931,20 +1153,23 @@ Nenhum ativo cadastrado.
 
 Use:
 
-/adicionar BBAS3 PETR4 VALE3
+/adicionar BBAS3 VALE3 ITUB4
 
 ou:
 
 /importar BBAS3 15 283,20
 `;
 
-      } else {
+      }
 
-        resposta =
-          "📊 SUA CARTEIRA\n\n";
+      else {
 
         let totalInvestido = 0;
+
         let ativosComPosicao = 0;
+
+        resposta =
+          "📊 <b>SUA CARTEIRA</b>\n\n";
 
         for (
           const ativo of carteira
@@ -966,7 +1191,7 @@ ou:
               posicao.valorInvestidoAtual;
 
             resposta += `
-📈 ${ativo}
+📈 <b>${ativo}</b>
 
 🔢 Quantidade:
 ${posicao.quantidadeAtual}
@@ -983,24 +1208,29 @@ ${dinheiro(
 
 `;
 
-          } else {
+          }
+
+          else {
 
             resposta += `
-📈 ${ativo}
+📈 <b>${ativo}</b>
 
 🔢 Quantidade:
 0
 
-⚪ Sem posição atualmente
+💰 Preço médio:
+R$ 0,00
 
 `;
+
           }
+
         }
 
         resposta += `
-━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━
 
-💰 TOTAL INVESTIDO:
+💰 <b>TOTAL INVESTIDO:</b>
 ${dinheiro(
   totalInvestido
 )}
@@ -1011,26 +1241,30 @@ ${carteira.length}
 📈 Ativos com posição:
 ${ativosComPosicao}
 `;
+
       }
+
     }
 
-    // =====================================================
+    // ===================================================
     // COMPRAR
-    // =====================================================
+    // ===================================================
 
     else if (
       texto.startsWith("/comprar")
     ) {
 
       const partes =
-        texto.split(/\s+/);
+        texto
+          .trim()
+          .split(/\s+/);
 
       if (
         partes.length < 4
       ) {
 
         resposta = `
-🛒 REGISTRAR COMPRA
+🛒 <b>REGISTRAR COMPRA</b>
 
 Use:
 
@@ -1041,7 +1275,9 @@ Exemplo:
 /comprar BBAS3 10 18,38
 `;
 
-      } else {
+      }
+
+      else {
 
         const ativo =
           partes[1]
@@ -1075,9 +1311,11 @@ Exemplo:
           resposta =
             "❌ Quantidade ou preço inválido.";
 
-        } else {
+        }
 
-          let carteira =
+        else {
+
+          const carteira =
             await obterCarteira();
 
           if (
@@ -1093,6 +1331,7 @@ Exemplo:
             await salvarCarteira(
               carteira
             );
+
           }
 
           const operacoes =
@@ -1120,6 +1359,7 @@ Exemplo:
 
             data:
               new Date().toISOString()
+
           });
 
           await salvarOperacoes(
@@ -1133,7 +1373,7 @@ Exemplo:
             );
 
           resposta = `
-✅ COMPRA REGISTRADA
+✅ <b>COMPRA REGISTRADA</b>
 
 📈 ${ativo}
 
@@ -1141,16 +1381,18 @@ Exemplo:
 ${quantidade}
 
 💰 Preço:
-${dinheiro(preco)}
+${dinheiro(
+  preco
+)}
 
 💵 Total:
 ${dinheiro(
   quantidade * preco
 )}
 
-━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━
 
-📊 POSIÇÃO ATUAL
+📊 <b>POSIÇÃO ATUAL</b>
 
 🔢 Quantidade:
 ${posicao.quantidadeAtual}
@@ -1165,27 +1407,32 @@ ${dinheiro(
   posicao.valorInvestidoAtual
 )}
 `;
+
         }
+
       }
+
     }
 
-    // =====================================================
+    // ===================================================
     // VENDER
-    // =====================================================
+    // ===================================================
 
     else if (
       texto.startsWith("/vender")
     ) {
 
       const partes =
-        texto.split(/\s+/);
+        texto
+          .trim()
+          .split(/\s+/);
 
       if (
         partes.length < 4
       ) {
 
         resposta = `
-💵 REGISTRAR VENDA
+💵 <b>REGISTRAR VENDA</b>
 
 Use:
 
@@ -1196,7 +1443,9 @@ Exemplo:
 /vender BBAS3 5 20
 `;
 
-      } else {
+      }
+
+      else {
 
         const ativo =
           partes[1]
@@ -1230,7 +1479,9 @@ Exemplo:
           resposta =
             "❌ Quantidade ou preço inválido.";
 
-        } else {
+        }
+
+        else {
 
           const operacoes =
             await obterOperacoes();
@@ -1247,7 +1498,7 @@ Exemplo:
           ) {
 
             resposta = `
-❌ VENDA NÃO REALIZADA
+❌ <b>VENDA NÃO REALIZADA</b>
 
 Você possui:
 
@@ -1260,7 +1511,9 @@ ${quantidade}
 ações
 `;
 
-          } else {
+          }
+
+          else {
 
             operacoes.push({
 
@@ -1284,6 +1537,7 @@ ações
 
               data:
                 new Date().toISOString()
+
             });
 
             await salvarOperacoes(
@@ -1297,7 +1551,7 @@ ações
               );
 
             resposta = `
-✅ VENDA REGISTRADA
+✅ <b>VENDA REGISTRADA</b>
 
 📈 ${ativo}
 
@@ -1305,16 +1559,18 @@ ações
 ${quantidade}
 
 💰 Preço:
-${dinheiro(preco)}
+${dinheiro(
+  preco
+)}
 
 💵 Total recebido:
 ${dinheiro(
   quantidade * preco
 )}
 
-━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━
 
-📊 POSIÇÃO ATUAL
+📊 <b>POSIÇÃO ATUAL</b>
 
 🔢 Quantidade:
 ${novaPosicao.quantidadeAtual}
@@ -1329,28 +1585,34 @@ ${dinheiro(
   novaPosicao.valorInvestidoAtual
 )}
 `;
+
           }
+
         }
+
       }
+
     }
 
-    // =====================================================
+    // ===================================================
     // DIVIDENDO
-    // =====================================================
+    // ===================================================
 
     else if (
       texto.startsWith("/dividendo")
     ) {
 
       const partes =
-        texto.split(/\s+/);
+        texto
+          .trim()
+          .split(/\s+/);
 
       if (
         partes.length < 3
       ) {
 
         resposta = `
-💰 REGISTRAR DIVIDENDO
+💰 <b>REGISTRAR DIVIDENDO</b>
 
 Use:
 
@@ -1361,7 +1623,9 @@ Exemplo:
 /dividendo BBAS3 25,50
 `;
 
-      } else {
+      }
+
+      else {
 
         const ativo =
           partes[1]
@@ -1382,7 +1646,9 @@ Exemplo:
           resposta =
             "❌ Valor do dividendo inválido.";
 
-        } else {
+        }
+
+        else {
 
           const dividendos =
             await obterDividendos();
@@ -1398,6 +1664,7 @@ Exemplo:
 
             data:
               new Date().toISOString()
+
           });
 
           await salvarDividendos(
@@ -1405,23 +1672,28 @@ Exemplo:
           );
 
           resposta = `
-💰 DIVIDENDO REGISTRADO
+💰 <b>DIVIDENDO REGISTRADO</b>
 
 📈 Ativo:
 ${ativo}
 
 💵 Valor recebido:
-${dinheiro(valor)}
+${dinheiro(
+  valor
+)}
 
 ☁️ Salvo na nuvem.
 `;
+
         }
+
       }
+
     }
 
-    // =====================================================
+    // ===================================================
     // HISTÓRICO
-    // =====================================================
+    // ===================================================
 
     else if (
       texto === "/historico"
@@ -1441,10 +1713,12 @@ ${dinheiro(valor)}
         resposta =
           "📜 HISTÓRICO VAZIO.";
 
-      } else {
+      }
+
+      else {
 
         resposta =
-          "📜 HISTÓRICO\n\n";
+          "📜 <b>HISTÓRICO</b>\n\n";
 
         const ultimas =
           operacoes
@@ -1461,11 +1735,12 @@ ${dinheiro(valor)}
               : "💵";
 
           resposta +=
-            `${emoji} ${op.tipo}\n` +
+            `${emoji} <b>${op.tipo}</b>\n` +
             `📈 ${op.ativo}\n` +
             `🔢 ${op.quantidade}\n` +
             `💰 ${dinheiro(op.preco)}\n` +
             `💵 Total: ${dinheiro(op.total)}\n\n`;
+
         }
 
         if (
@@ -1473,28 +1748,32 @@ ${dinheiro(valor)}
         ) {
 
           resposta +=
-            "💰 DIVIDENDOS\n\n";
+            "💰 <b>DIVIDENDOS</b>\n\n";
 
-          const ultimosDividendos =
+          const ultimos =
             dividendos
               .slice(-10)
               .reverse();
 
           for (
-            const div of ultimosDividendos
+            const div of ultimos
           ) {
 
             resposta +=
               `📈 ${div.ativo}\n` +
               `💰 ${dinheiro(div.valor)}\n\n`;
+
           }
+
         }
+
       }
+
     }
 
-    // =====================================================
+    // ===================================================
     // RESUMO
-    // =====================================================
+    // ===================================================
 
     else if (
       texto === "/resumo"
@@ -1514,24 +1793,21 @@ ${dinheiro(valor)}
       ) {
 
         resposta = `
-📊 RESUMO DA CARTEIRA
-
-━━━━━━━━━━━━━━━━
+📊 <b>RESUMO</b>
 
 Sua carteira está vazia.
 
 Use:
 
 /importar BBAS3 15 283,20
-
-ou:
-
-/adicionar BBAS3 PETR4 VALE3
 `;
 
-      } else {
+      }
+
+      else {
 
         let totalInvestido = 0;
+
         let totalAtual = 0;
 
         let detalhes = "";
@@ -1551,7 +1827,7 @@ ou:
           ) {
 
             detalhes += `
-📈 ${ativo}
+📈 <b>${ativo}</b>
 
 🔢 Quantidade: 0
 
@@ -1560,57 +1836,20 @@ ou:
 `;
 
             continue;
-          }
 
-          let dadosAtual;
+          }
 
           try {
 
-            dadosAtual =
+            const dados =
               await consultarBrapi(
                 ativo
               );
 
-          } catch (erro) {
+            if (!dados) {
 
-            console.error(
-              `Erro ${ativo}:`,
-              erro
-            );
-
-            totalInvestido +=
-              posicao.valorInvestidoAtual;
-
-            detalhes += `
-📈 ${ativo}
-
-🔢 Quantidade:
-${posicao.quantidadeAtual}
-
-💰 Preço médio:
-${dinheiro(
-  posicao.precoMedio
-)}
-
-💵 Investido:
-${dinheiro(
-  posicao.valorInvestidoAtual
-)}
-
-⚠️ Cotação indisponível.
-
-`;
-
-            continue;
-          }
-
-          if (!dadosAtual) {
-
-            totalInvestido +=
-              posicao.valorInvestidoAtual;
-
-            detalhes += `
-📈 ${ativo}
+              detalhes += `
+📈 <b>${ativo}</b>
 
 🔢 Quantidade:
 ${posicao.quantidadeAtual}
@@ -1629,48 +1868,52 @@ ${dinheiro(
 
 `;
 
-            continue;
-          }
+              totalInvestido +=
+                posicao.valorInvestidoAtual;
 
-          const precoAtual =
-            Number(
-              dadosAtual.regularMarketPrice || 0
-            );
+              continue;
 
-          const valorAtual =
-            posicao.quantidadeAtual *
-            precoAtual;
+            }
 
-          const lucro =
-            valorAtual -
-            posicao.valorInvestidoAtual;
+            const precoAtual =
+              Number(
+                dados.regularMarketPrice || 0
+              );
 
-          const rentabilidade =
-            posicao.valorInvestidoAtual > 0
-              ? (
-                  lucro /
-                  posicao.valorInvestidoAtual
-                ) * 100
-              : 0;
+            const valorAtual =
+              posicao.quantidadeAtual *
+              precoAtual;
 
-          const emoji =
-            lucro >= 0
-              ? "🟢"
-              : "🔴";
+            const lucro =
+              valorAtual -
+              posicao.valorInvestidoAtual;
 
-          const sinal =
-            lucro >= 0
-              ? "+"
-              : "";
+            const rentabilidade =
+              posicao.valorInvestidoAtual > 0
+                ? (
+                    lucro /
+                    posicao.valorInvestidoAtual
+                  ) * 100
+                : 0;
 
-          totalInvestido +=
-            posicao.valorInvestidoAtual;
+            const emoji =
+              lucro >= 0
+                ? "🟢"
+                : "🔴";
 
-          totalAtual +=
-            valorAtual;
+            const sinal =
+              lucro >= 0
+                ? "+"
+                : "";
 
-          detalhes += `
-📈 ${ativo}
+            totalInvestido +=
+              posicao.valorInvestidoAtual;
+
+            totalAtual +=
+              valorAtual;
+
+            detalhes += `
+📈 <b>${ativo}</b>
 
 🔢 Quantidade:
 ${posicao.quantidadeAtual}
@@ -1706,29 +1949,54 @@ ${sinal}${percentual(
 )}
 
 `;
+
+          }
+
+          catch (erro) {
+
+            console.error(
+              `Erro ${ativo}:`,
+              erro
+            );
+
+            totalInvestido +=
+              posicao.valorInvestidoAtual;
+
+            detalhes += `
+📈 <b>${ativo}</b>
+
+🔢 Quantidade:
+${posicao.quantidadeAtual}
+
+💰 Preço médio:
+${dinheiro(
+  posicao.precoMedio
+)}
+
+💵 Investido:
+${dinheiro(
+  posicao.valorInvestidoAtual
+)}
+
+⚠️ Erro ao consultar cotação.
+
+`;
+
+          }
+
         }
 
-        const resultadoTotal =
+        const resultado =
           totalAtual -
           totalInvestido;
 
-        const rentabilidadeTotal =
+        const rentabilidade =
           totalInvestido > 0
             ? (
-                resultadoTotal /
+                resultado /
                 totalInvestido
               ) * 100
             : 0;
-
-        const emojiTotal =
-          resultadoTotal >= 0
-            ? "🟢"
-            : "🔴";
-
-        const sinalTotal =
-          resultadoTotal >= 0
-            ? "+"
-            : "";
 
         const totalDividendos =
           dividendos.reduce(
@@ -1744,7 +2012,7 @@ ${sinal}${percentual(
           );
 
         let ibovTexto =
-          "⚠️ Não foi possível consultar o Ibovespa.";
+          "🇧🇷 IBOVESPA\n\n⚠️ Cotação indisponível.";
 
         try {
 
@@ -1765,18 +2033,18 @@ ${sinal}${percentual(
                 ibov.regularMarketChangePercent || 0
               );
 
-            const emojiIbov =
+            const emoji =
               variacao >= 0
                 ? "🟢"
                 : "🔴";
 
-            const sinalIbov =
+            const sinal =
               variacao >= 0
                 ? "+"
                 : "";
 
             ibovTexto = `
-🇧🇷 IBOVESPA
+🇧🇷 <b>IBOVESPA</b>
 
 📊 Pontos:
 ${pontos.toLocaleString(
@@ -1786,23 +2054,37 @@ ${pontos.toLocaleString(
   }
 )}
 
-${emojiIbov} Variação:
-${sinalIbov}${percentual(
+${emoji} Variação:
+${sinal}${percentual(
   variacao
 )}
 `;
+
           }
 
-        } catch (erro) {
-
-          console.error(
-            "Erro Ibovespa:",
-            erro
-          );
         }
 
+        catch (erro) {
+
+          console.error(
+            "Erro IBOV:",
+            erro
+          );
+
+        }
+
+        const emojiResultado =
+          resultado >= 0
+            ? "🟢"
+            : "🔴";
+
+        const sinalResultado =
+          resultado >= 0
+            ? "+"
+            : "";
+
         resposta = `
-📊 RESUMO DA CARTEIRA
+📊 <b>RESUMO DA CARTEIRA</b>
 
 ━━━━━━━━━━━━━━━━
 
@@ -1810,7 +2092,7 @@ ${detalhes}
 
 ━━━━━━━━━━━━━━━━
 
-💼 TOTAL DA CARTEIRA
+💼 <b>TOTAL DA CARTEIRA</b>
 
 💰 Total investido:
 ${dinheiro(
@@ -1822,14 +2104,14 @@ ${dinheiro(
   totalAtual
 )}
 
-${emojiTotal} Resultado:
-${sinalTotal}${dinheiro(
-  resultadoTotal
+${emojiResultado} Resultado:
+${sinalResultado}${dinheiro(
+  resultado
 )}
 
 📈 Rentabilidade:
-${sinalTotal}${percentual(
-  rentabilidadeTotal
+${sinalResultado}${percentual(
+  rentabilidade
 )}
 
 💰 Dividendos recebidos:
@@ -1845,19 +2127,23 @@ ${ibovTexto}
 
 🕐 Cotação consultada agora.
 `;
+
       }
+
     }
 
-    // =====================================================
+    // ===================================================
     // COTAÇÃO
-    // =====================================================
+    // ===================================================
 
     else if (
       texto.startsWith("/cotacao")
     ) {
 
       const partes =
-        texto.split(/\s+/);
+        texto
+          .trim()
+          .split(/\s+/);
 
       let ticker =
         partes[1];
@@ -1874,11 +2160,15 @@ ${ibovTexto}
           resposta =
             "❌ Sua carteira está vazia.";
 
-        } else {
+        }
+
+        else {
 
           ticker =
             carteira[0];
+
         }
+
       }
 
       if (
@@ -1903,7 +2193,9 @@ ${ibovTexto}
           resposta =
             `❌ Não encontrei o ativo ${ticker}.`;
 
-        } else {
+        }
+
+        else {
 
           const preco =
             Number(
@@ -1926,25 +2218,34 @@ ${ibovTexto}
               : "";
 
           resposta = `
-📊 ${ativo.symbol}
+📊 <b>${ativo.symbol}</b>
 
-${ativo.longName || ativo.shortName || ""}
+${escaparHTML(
+  ativo.longName ||
+  ativo.shortName ||
+  ""
+)}
 
 💰 Preço:
-${dinheiro(preco)}
+${dinheiro(
+  preco
+)}
 
 ${emoji} Variação:
 ${sinal}${percentual(
   variacao
 )}
 `;
+
         }
+
       }
+
     }
 
-    // =====================================================
+    // ===================================================
     // NOTÍCIAS
-    // =====================================================
+    // ===================================================
 
     else if (
       texto === "/noticias"
@@ -1954,47 +2255,55 @@ ${sinal}${percentual(
         await obterCarteira();
 
       resposta = `
-📰 MONITORAMENTO DE NOTÍCIAS
+📰 <b>MONITORAMENTO DE NOTÍCIAS</b>
 
-Seus ativos:
+━━━━━━━━━━━━━━━━
+
+📈 <b>SEUS ATIVOS</b>
 
 ${
   carteira.length > 0
     ? carteira
         .map(
-          (ativo) =>
+          ativo =>
             `• ${ativo}`
         )
         .join("\n")
     : "Nenhum ativo cadastrado."
 }
 
-🇧🇷 IBOVESPA
+━━━━━━━━━━━━━━━━
+
+🇧🇷 <b>IBOVESPA</b>
 
 ✅ Monitoramento automático ativado.
 
 ⏰ O monitor verificará novas notícias automaticamente.
+
+📲 Você receberá mensagens quando novas notícias forem encontradas.
 `;
+
     }
 
-    // =====================================================
+    // ===================================================
     // COMANDO DESCONHECIDO
-    // =====================================================
+    // ===================================================
 
     else {
 
       resposta = `
-❓ Comando não reconhecido.
+❓ <b>COMANDO NÃO RECONHECIDO</b>
 
 Digite:
 
 /ajuda
 `;
+
     }
 
-    // =====================================================
+    // ===================================================
     // ENVIAR
-    // =====================================================
+    // ===================================================
 
     await enviarTelegram(
       resposta
@@ -2007,28 +2316,48 @@ Digite:
       }
     );
 
-  } catch (erro) {
+  }
+
+  // =====================================================
+  // ERRO GERAL
+  // =====================================================
+
+  catch (erro) {
 
     console.error(
-      "ERRO:",
+      "================================="
+    );
+
+    console.error(
+      "❌ ERRO:",
       erro
+    );
+
+    console.error(
+      "================================="
     );
 
     return new Response(
       JSON.stringify({
+
         erro:
           erro instanceof Error
             ? erro.message
             : String(erro)
+
       }),
       {
+
         status: 500,
 
         headers: {
           "Content-Type":
             "application/json"
         }
+
       }
     );
+
   }
+
 };
