@@ -3,7 +3,7 @@ import { getStore } from "@netlify/blobs";
 export default async (req) => {
   try {
     // =====================================================
-    // VERIFICAR MÉTODO
+    // MÉTODO
     // =====================================================
 
     if (req.method !== "POST") {
@@ -13,7 +13,7 @@ export default async (req) => {
     }
 
     // =====================================================
-    // RECEBER ATUALIZAÇÃO
+    // RECEBER UPDATE
     // =====================================================
 
     const update = await req.json();
@@ -33,7 +33,7 @@ export default async (req) => {
     const texto = update.message.text || "";
 
     // =====================================================
-    // TOKEN TELEGRAM
+    // TELEGRAM TOKEN
     // =====================================================
 
     const token = process.env.TELEGRAM_TOKEN;
@@ -124,7 +124,7 @@ export default async (req) => {
     }
 
     // =====================================================
-    // CONVERTER NÚMERO BRASILEIRO
+    // NÚMERO BRASILEIRO
     // =====================================================
 
     function converterNumero(valor) {
@@ -132,15 +132,34 @@ export default async (req) => {
         return NaN;
       }
 
-      return Number(
-        String(valor)
-          .replace(/\./g, "")
-          .replace(",", ".")
-      );
+      let textoValor = String(valor).trim();
+
+      /*
+       * Se tiver ponto e vírgula:
+       * 1.234,56 -> 1234.56
+       *
+       * Se tiver apenas vírgula:
+       * 18,88 -> 18.88
+       */
+
+      if (
+        textoValor.includes(".") &&
+        textoValor.includes(",")
+      ) {
+        textoValor =
+          textoValor
+            .replace(/\./g, "")
+            .replace(",", ".");
+      } else {
+        textoValor =
+          textoValor.replace(",", ".");
+      }
+
+      return Number(textoValor);
     }
 
     // =====================================================
-    // FORMATAR DINHEIRO
+    // DINHEIRO
     // =====================================================
 
     function dinheiro(valor) {
@@ -154,40 +173,23 @@ export default async (req) => {
     }
 
     // =====================================================
-    // ENVIAR TELEGRAM
+    // PERCENTUAL
     // =====================================================
 
-    async function enviarTelegram(mensagem) {
-      const response = await fetch(
-        `https://api.telegram.org/bot${token}/sendMessage`,
+    function percentual(valor) {
+      const numero = Number(valor || 0);
+
+      return numero.toLocaleString(
+        "pt-BR",
         {
-          method: "POST",
-
-          headers: {
-            "Content-Type":
-              "application/json"
-          },
-
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: mensagem
-          })
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
         }
-      );
-
-      if (!response.ok) {
-        const erro =
-          await response.text();
-
-        console.error(
-          "Erro Telegram:",
-          erro
-        );
-      }
+      ) + "%";
     }
 
     // =====================================================
-    // CALCULAR POSIÇÃO DE UM ATIVO
+    // CALCULAR POSIÇÃO
     // =====================================================
 
     function calcularPosicao(
@@ -219,7 +221,6 @@ export default async (req) => {
 
           valorComprado +=
             Number(op.total);
-
         }
 
         else if (
@@ -231,7 +232,6 @@ export default async (req) => {
 
           valorVendido +=
             Number(op.total);
-
         }
       }
 
@@ -245,18 +245,6 @@ export default async (req) => {
             quantidadeComprada
           : 0;
 
-      /*
-       * O valor investido na posição atual
-       * usa o preço médio histórico.
-       *
-       * Exemplo:
-       *
-       * 15 ações
-       * PM = R$ 18,88
-       *
-       * Investido = R$ 283,20
-       */
-
       const valorInvestidoAtual =
         quantidadeAtual *
         precoMedio;
@@ -264,22 +252,118 @@ export default async (req) => {
       return {
         quantidadeComprada,
         valorComprado,
-
         quantidadeVendida,
         valorVendido,
-
         quantidadeAtual,
-
         precoMedio,
-
         valorInvestidoAtual
       };
+    }
+
+    // =====================================================
+    // CONSULTAR BRAPI
+    // =====================================================
+
+    async function consultarBrapi(ticker) {
+
+      const brapiToken =
+        process.env.BRAPI_TOKEN;
+
+      let url =
+        `https://brapi.dev/api/quote/${encodeURIComponent(
+          ticker
+        )}`;
+
+      if (brapiToken) {
+        url +=
+          `?token=${encodeURIComponent(
+            brapiToken
+          )}`;
+      }
+
+      console.log(
+        "Consultando BRAPI:",
+        url
+      );
+
+      const response =
+        await fetch(url);
+
+      console.log(
+        "Status BRAPI:",
+        response.status
+      );
+
+      if (!response.ok) {
+
+        const erro =
+          await response.text();
+
+        console.error(
+          "Resposta BRAPI:",
+          erro
+        );
+
+        throw new Error(
+          `BRAPI retornou ${response.status}: ${erro}`
+        );
+      }
+
+      const dados =
+        await response.json();
+
+      if (
+        !dados.results ||
+        dados.results.length === 0
+      ) {
+        return null;
+      }
+
+      return dados.results[0];
+    }
+
+    // =====================================================
+    // ENVIAR TELEGRAM
+    // =====================================================
+
+    async function enviarTelegram(
+      mensagem
+    ) {
+
+      const response =
+        await fetch(
+          `https://api.telegram.org/bot${token}/sendMessage`,
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json"
+            },
+
+            body: JSON.stringify({
+              chat_id: chatId,
+              text: mensagem
+            })
+          }
+        );
+
+      if (!response.ok) {
+
+        const erro =
+          await response.text();
+
+        console.error(
+          "Erro Telegram:",
+          erro
+        );
+      }
     }
 
     let resposta = "";
 
     // =====================================================
-    // /START E /AJUDA
+    // START / AJUDA
     // =====================================================
 
     if (
@@ -290,6 +374,8 @@ export default async (req) => {
       resposta = `
 📊 MEU BOT DE INVESTIMENTOS
 
+Bem-vindo! 👋
+
 📈 COTAÇÃO
 
 /cotacao BBAS3
@@ -298,17 +384,17 @@ export default async (req) => {
 
 /carteira
 
-➕ ADICIONAR ATIVOS
-
-/adicionar BBAS3 PETR4 VALE3
-
 📥 IMPORTAR CARTEIRA EXISTENTE
 
 /importar BBAS3 15 283,20
 
+➕ ADICIONAR ATIVOS
+
+/adicionar BBAS3 PETR4 VALE3
+
 🛒 COMPRAR
 
-/comprar BBAS3 10 18,32
+/comprar BBAS3 10 18,38
 
 💵 VENDER
 
@@ -316,23 +402,19 @@ export default async (req) => {
 
 💰 DIVIDENDO
 
-/dividendo BBAS3 25,50
+/dividendo BBAS3 15,50
 
 📜 HISTÓRICO
 
 /historico
 
-📊 RESUMO
+📊 RESUMO COMPLETO
 
 /resumo
 
 📰 NOTÍCIAS
 
 /noticias
-
-➖ REMOVER ATIVO
-
-/remover PETR4
 
 🗑️ LIMPAR CARTEIRA
 
@@ -341,7 +423,7 @@ export default async (req) => {
     }
 
     // =====================================================
-    // /ADICIONAR
+    // ADICIONAR ATIVOS
     // =====================================================
 
     else if (
@@ -433,7 +515,7 @@ ${carteira.length} ativos
     }
 
     // =====================================================
-    // /IMPORTAR
+    // IMPORTAR
     // =====================================================
 
     else if (
@@ -445,22 +527,12 @@ ${carteira.length} ativos
           .trim()
           .split(/\s+/);
 
-      /*
-       * FORMATO:
-       *
-       * /importar BBAS3 15 283,20
-       *
-       * BBAS3 = ativo
-       * 15 = quantidade
-       * 283,20 = total investido
-       */
-
       if (
         partes.length < 4
       ) {
 
         resposta = `
-📥 IMPORTAR CARTEIRA EXISTENTE
+📥 IMPORTAR CARTEIRA
 
 Use:
 
@@ -469,14 +541,6 @@ Use:
 Exemplo:
 
 /importar BBAS3 15 283,20
-
-Isso significa:
-
-15 ações
-R$ 283,20 investidos
-
-Preço médio:
-R$ 18,88
 `;
 
       } else {
@@ -521,54 +585,42 @@ Exemplo:
 
         } else {
 
-          const precoMedio =
-            totalInvestido /
-            quantidade;
-
-          let carteira =
+          const carteira =
             await obterCarteira();
 
-          let operacoes =
+          const operacoes =
             await obterOperacoes();
 
-          // -------------------------------------------------
-          // Verificar se já existe posição
-          // -------------------------------------------------
-
-          const posicaoAtual =
+          const posicao =
             calcularPosicao(
               operacoes,
               ativo
             );
 
           if (
-            posicaoAtual.quantidadeAtual >
-            0
+            posicao.quantidadeAtual > 0
           ) {
 
             resposta = `
 ⚠️ ${ativo} JÁ POSSUI POSIÇÃO
 
 Quantidade atual:
-${posicaoAtual.quantidadeAtual}
+${posicao.quantidadeAtual}
 
 Preço médio atual:
 ${dinheiro(
-  posicaoAtual.precoMedio
+  posicao.precoMedio
 )}
 
-Para evitar duplicação, a importação não foi realizada.
+Para evitar duplicação,
+a importação não foi realizada.
 
-Se quiser adicionar mais ações, use:
+Se quiser adicionar mais ações:
 
 /comprar ${ativo} QUANTIDADE PREÇO
 `;
 
           } else {
-
-            // -------------------------------------------------
-            // Adicionar ativo à carteira
-            // -------------------------------------------------
 
             if (
               !carteira.includes(
@@ -585,12 +637,11 @@ Se quiser adicionar mais ações, use:
               );
             }
 
-            // -------------------------------------------------
-            // Registrar posição inicial
-            // -------------------------------------------------
+            const precoMedio =
+              totalInvestido /
+              quantidade;
 
-            const operacao = {
-
+            operacoes.push({
               id:
                 Date.now(),
 
@@ -612,11 +663,7 @@ Se quiser adicionar mais ações, use:
 
               data:
                 new Date().toISOString()
-            };
-
-            operacoes.push(
-              operacao
-            );
+            });
 
             await salvarOperacoes(
               operacoes
@@ -641,9 +688,6 @@ ${dinheiro(
 )}
 
 ☁️ Salvo na nuvem.
-
-Agora novas compras e vendas
-serão calculadas normalmente.
 `;
           }
         }
@@ -651,7 +695,7 @@ serão calculadas normalmente.
     }
 
     // =====================================================
-    // /REMOVER
+    // REMOVER
     // =====================================================
 
     else if (
@@ -689,9 +733,6 @@ Exemplo:
         let carteira =
           await obterCarteira();
 
-        const antes =
-          carteira.length;
-
         carteira =
           carteira.filter(
             (ativo) =>
@@ -719,20 +760,11 @@ ${ativos
 📊 Ativos restantes:
 ${carteira.length}
 `;
-
-        if (
-          antes ===
-          carteira.length
-        ) {
-
-          resposta +=
-            "\n⚠️ Nenhum desses ativos estava cadastrado.";
-        }
       }
     }
 
     // =====================================================
-    // /CARTEIRA
+    // CARTEIRA
     // =====================================================
 
     else if (
@@ -764,11 +796,8 @@ Use:
         resposta =
           "📊 SUA CARTEIRA\n\n";
 
-        let totalInvestido =
-          0;
-
-        let totalAtivosComPosicao =
-          0;
+        let totalInvestido = 0;
+        let ativosComPosicao = 0;
 
         for (
           const ativo of carteira
@@ -780,16 +809,11 @@ Use:
               ativo
             );
 
-          /*
-           * Só contamos como posição
-           * quando realmente existem ações.
-           */
-
           if (
             posicao.quantidadeAtual > 0
           ) {
 
-            totalAtivosComPosicao++;
+            ativosComPosicao++;
 
             totalInvestido +=
               posicao.valorInvestidoAtual;
@@ -824,7 +848,6 @@ ${dinheiro(
 R$ 0,00
 
 `;
-
           }
         }
 
@@ -840,13 +863,13 @@ ${dinheiro(
 ${carteira.length}
 
 📈 Ativos com posição:
-${totalAtivosComPosicao}
+${ativosComPosicao}
 `;
       }
     }
 
     // =====================================================
-    // /COMPRAR
+    // COMPRAR
     // =====================================================
 
     else if (
@@ -931,7 +954,7 @@ Exemplo:
           const operacoes =
             await obterOperacoes();
 
-          const novaOperacao = {
+          operacoes.push({
 
             id:
               Date.now(),
@@ -949,16 +972,11 @@ Exemplo:
             preco,
 
             total:
-              quantidade *
-              preco,
+              quantidade * preco,
 
             data:
               new Date().toISOString()
-          };
-
-          operacoes.push(
-            novaOperacao
-          );
+          });
 
           await salvarOperacoes(
             operacoes
@@ -1008,7 +1026,7 @@ ${dinheiro(
     }
 
     // =====================================================
-    // /VENDER
+    // VENDER
     // =====================================================
 
     else if (
@@ -1102,7 +1120,7 @@ ações
 
           } else {
 
-            const novaOperacao = {
+            operacoes.push({
 
               id:
                 Date.now(),
@@ -1120,16 +1138,11 @@ ações
               preco,
 
               total:
-                quantidade *
-                preco,
+                quantidade * preco,
 
               data:
                 new Date().toISOString()
-            };
-
-            operacoes.push(
-              novaOperacao
-            );
+            });
 
             await salvarOperacoes(
               operacoes
@@ -1180,7 +1193,7 @@ ${dinheiro(
     }
 
     // =====================================================
-    // /DIVIDENDO
+    // DIVIDENDO
     // =====================================================
 
     else if (
@@ -1234,7 +1247,7 @@ Exemplo:
           const dividendos =
             await obterDividendos();
 
-          const novoDividendo = {
+          dividendos.push({
 
             id:
               Date.now(),
@@ -1245,11 +1258,7 @@ Exemplo:
 
             data:
               new Date().toISOString()
-          };
-
-          dividendos.push(
-            novoDividendo
-          );
+          });
 
           await salvarDividendos(
             dividendos
@@ -1271,7 +1280,7 @@ ${dinheiro(valor)}
     }
 
     // =====================================================
-    // /HISTORICO
+    // HISTÓRICO
     // =====================================================
 
     else if (
@@ -1297,13 +1306,13 @@ ${dinheiro(valor)}
         resposta =
           "📜 HISTÓRICO\n\n";
 
-        const ultimasOperacoes =
+        const ultimas =
           operacoes
             .slice(-15)
             .reverse();
 
         for (
-          const op of ultimasOperacoes
+          const op of ultimas
         ) {
 
           const emoji =
@@ -1311,14 +1320,8 @@ ${dinheiro(valor)}
               ? "🛒"
               : "💵";
 
-          const origem =
-            op.origem ===
-            "IMPORTACAO"
-              ? "📥 Importação"
-              : "";
-
           resposta +=
-            `${emoji} ${op.tipo} ${origem}\n` +
+            `${emoji} ${op.tipo}\n` +
             `📈 ${op.ativo}\n` +
             `🔢 ${op.quantidade}\n` +
             `💰 ${dinheiro(op.preco)}\n` +
@@ -1350,7 +1353,7 @@ ${dinheiro(valor)}
     }
 
     // =====================================================
-    // /RESUMO
+    // RESUMO COMPLETO
     // =====================================================
 
     else if (
@@ -1366,112 +1369,369 @@ ${dinheiro(valor)}
       const dividendos =
         await obterDividendos();
 
-      let totalComprado =
-        0;
-
-      let totalVendido =
-        0;
-
-      for (
-        const op of operacoes
+      if (
+        carteira.length === 0
       ) {
 
-        if (
-          op.tipo === "COMPRA"
+        resposta = `
+📊 RESUMO
+
+Sua carteira está vazia.
+
+Use:
+
+/importar BBAS3 15 283,20
+`;
+
+      } else {
+
+        let totalInvestido = 0;
+        let totalAtual = 0;
+
+        let detalhes = "";
+
+        // =================================================
+        // CONSULTAR TODOS OS ATIVOS
+        // =================================================
+
+        for (
+          const ativo of carteira
         ) {
 
-          totalComprado +=
-            Number(op.total);
+          const posicao =
+            calcularPosicao(
+              operacoes,
+              ativo
+            );
 
+          // Ativo cadastrado mas sem posição
+          if (
+            posicao.quantidadeAtual <= 0
+          ) {
+
+            detalhes += `
+📈 ${ativo}
+
+🔢 Quantidade: 0
+⚪ Sem posição atualmente
+
+`;
+
+            continue;
+          }
+
+          // ===============================================
+          // CONSULTAR PREÇO ATUAL
+          // ===============================================
+
+          let dadosAtual;
+
+          try {
+
+            dadosAtual =
+              await consultarBrapi(
+                ativo
+              );
+
+          } catch (erro) {
+
+            console.error(
+              `Erro ao consultar ${ativo}:`,
+              erro
+            );
+
+            detalhes += `
+📈 ${ativo}
+
+🔢 Quantidade:
+${posicao.quantidadeAtual}
+
+💰 Preço médio:
+${dinheiro(
+  posicao.precoMedio
+)}
+
+💵 Investido:
+${dinheiro(
+  posicao.valorInvestidoAtual
+)}
+
+⚠️ Não foi possível consultar o preço atual.
+
+`;
+
+            totalInvestido +=
+              posicao.valorInvestidoAtual;
+
+            continue;
+          }
+
+          if (!dadosAtual) {
+
+            detalhes += `
+📈 ${ativo}
+
+🔢 Quantidade:
+${posicao.quantidadeAtual}
+
+💰 Preço médio:
+${dinheiro(
+  posicao.precoMedio
+)}
+
+💵 Investido:
+${dinheiro(
+  posicao.valorInvestidoAtual
+)}
+
+⚠️ Cotação não encontrada.
+
+`;
+
+            totalInvestido +=
+              posicao.valorInvestidoAtual;
+
+            continue;
+          }
+
+          const precoAtual =
+            Number(
+              dadosAtual.regularMarketPrice || 0
+            );
+
+          const valorAtual =
+            posicao.quantidadeAtual *
+            precoAtual;
+
+          const lucro =
+            valorAtual -
+            posicao.valorInvestidoAtual;
+
+          const rentabilidade =
+            posicao.valorInvestidoAtual > 0
+              ? (
+                  lucro /
+                  posicao.valorInvestidoAtual
+                ) * 100
+              : 0;
+
+          const emojiResultado =
+            lucro >= 0
+              ? "🟢"
+              : "🔴";
+
+          const sinal =
+            lucro >= 0
+              ? "+"
+              : "";
+
+          totalInvestido +=
+            posicao.valorInvestidoAtual;
+
+          totalAtual +=
+            valorAtual;
+
+          detalhes += `
+📈 ${ativo}
+
+🔢 Quantidade:
+${posicao.quantidadeAtual}
+
+💰 Preço médio:
+${dinheiro(
+  posicao.precoMedio
+)}
+
+📊 Preço atual:
+${dinheiro(
+  precoAtual
+)}
+
+💵 Investido:
+${dinheiro(
+  posicao.valorInvestidoAtual
+)}
+
+💼 Valor atual:
+${dinheiro(
+  valorAtual
+)}
+
+${emojiResultado} Resultado:
+${sinal}${dinheiro(
+  lucro
+)}
+
+📈 Rentabilidade:
+${sinal}${percentual(
+  rentabilidade
+)}
+
+`;
         }
 
-        else if (
-          op.tipo === "VENDA"
-        ) {
+        // =================================================
+        // RESULTADO TOTAL
+        // =================================================
 
-          totalVendido +=
-            Number(op.total);
-        }
-      }
+        const resultadoTotal =
+          totalAtual -
+          totalInvestido;
 
-      const totalDividendos =
-        dividendos.reduce(
-          (
-            total,
-            div
-          ) =>
-            total +
-            Number(div.valor),
-          0
-        );
+        const rentabilidadeTotal =
+          totalInvestido > 0
+            ? (
+                resultadoTotal /
+                totalInvestido
+              ) * 100
+            : 0;
 
-      let patrimonioInvestido =
-        0;
+        const emojiTotal =
+          resultadoTotal >= 0
+            ? "🟢"
+            : "🔴";
 
-      for (
-        const ativo of carteira
-      ) {
+        const sinalTotal =
+          resultadoTotal >= 0
+            ? "+"
+            : "";
 
-        const posicao =
-          calcularPosicao(
-            operacoes,
-            ativo
+        // =================================================
+        // DIVIDENDOS
+        // =================================================
+
+        const totalDividendos =
+          dividendos.reduce(
+            (
+              total,
+              div
+            ) =>
+              total +
+              Number(div.valor || 0),
+            0
           );
 
-        patrimonioInvestido +=
-          posicao.valorInvestidoAtual;
-      }
+        // =================================================
+        // IBOVESPA
+        // =================================================
 
-      resposta = `
-📊 RESUMO DOS INVESTIMENTOS
+        let ibovTexto =
+          "⚠️ Não foi possível consultar o Ibovespa.";
 
-━━━━━━━━━━━━━━
+        try {
 
-💼 CARTEIRA
+          /*
+           * A BRAPI utiliza ^BVSP para
+           * o índice Ibovespa.
+           */
 
-📈 Ativos:
-${carteira.length}
+          const ibov =
+            await consultarBrapi(
+              "^BVSP"
+            );
 
-💰 Investido atualmente:
-${dinheiro(
-  patrimonioInvestido
+          if (ibov) {
+
+            const pontos =
+              Number(
+                ibov.regularMarketPrice || 0
+              );
+
+            const variacaoIbov =
+              Number(
+                ibov.regularMarketChangePercent || 0
+              );
+
+            const emojiIbov =
+              variacaoIbov >= 0
+                ? "🟢"
+                : "🔴";
+
+            const sinalIbov =
+              variacaoIbov >= 0
+                ? "+"
+                : "";
+
+            ibovTexto = `
+🇧🇷 IBOVESPA
+
+📊 Pontos:
+${pontos.toLocaleString(
+  "pt-BR",
+  {
+    maximumFractionDigits: 2
+  }
 )}
 
-━━━━━━━━━━━━━━
+${emojiIbov} Variação:
+${sinalIbov}${percentual(
+  variacaoIbov
+)}
+`;
 
-🛒 COMPRAS
+          }
 
+        } catch (erro) {
+
+          console.error(
+            "Erro ao consultar Ibovespa:",
+            erro
+          );
+        }
+
+        // =================================================
+        // MONTAR RESPOSTA
+        // =================================================
+
+        resposta = `
+📊 RESUMO DA CARTEIRA
+
+━━━━━━━━━━━━━━━━
+
+${detalhes}
+
+━━━━━━━━━━━━━━━━
+
+💼 TOTAL DA CARTEIRA
+
+💰 Total investido:
 ${dinheiro(
-  totalComprado
+  totalInvestido
 )}
 
-💵 VENDAS
-
+💵 Valor atual:
 ${dinheiro(
-  totalVendido
+  totalAtual
 )}
 
-💰 DIVIDENDOS
+${emojiTotal} Resultado:
+${sinalTotal}${dinheiro(
+  resultadoTotal
+)}
 
+📈 Rentabilidade:
+${sinalTotal}${percentual(
+  rentabilidadeTotal
+)}
+
+💰 Dividendos recebidos:
 ${dinheiro(
   totalDividendos
 )}
 
-🧾 Operações:
-${operacoes.length}
+━━━━━━━━━━━━━━━━
 
-🇧🇷 IBOVESPA
+${ibovTexto}
 
-Monitoramento automático ativado.
+━━━━━━━━━━━━━━━━
 
-📰 NOTÍCIAS
-
-Monitoramento automático ativado.
+🕐 Cotação consultada agora.
 `;
+      }
     }
 
     // =====================================================
-    // /COTAÇÃO
+    // COTAÇÃO
     // =====================================================
 
     else if (
@@ -1517,80 +1777,21 @@ Monitoramento automático ativado.
               ""
             );
 
-        const brapiToken =
-          process.env.BRAPI_TOKEN;
-
-        let url =
-          `https://brapi.dev/api/quote/${ticker}`;
-
-        if (
-          brapiToken
-        ) {
-
-          url +=
-            `?token=${encodeURIComponent(
-              brapiToken
-            )}`;
-        }
-
-        console.log(
-          "Consultando BRAPI:",
-          url
-        );
-
-        const response =
-          await fetch(url);
-
-        console.log(
-          "Status BRAPI:",
-          response.status
-        );
-
-        if (
-          !response.ok
-        ) {
-
-          const erro =
-            await response.text();
-
-          console.error(
-            "Resposta BRAPI:",
-            erro
+        const ativo =
+          await consultarBrapi(
+            ticker
           );
 
-          throw new Error(
-            `BRAPI retornou ${response.status}: ${erro}`
-          );
-        }
-
-        const dados =
-          await response.json();
-
-        if (
-          !dados.results ||
-          dados.results.length === 0
-        ) {
+        if (!ativo) {
 
           resposta =
             `❌ Não encontrei o ativo ${ticker}.`;
 
         } else {
 
-          const ativo =
-            dados.results[0];
-
           const preco =
             Number(
               ativo.regularMarketPrice || 0
-            ).toLocaleString(
-              "pt-BR",
-              {
-                style:
-                  "currency",
-
-                currency:
-                  "BRL"
-              }
             );
 
           const variacao =
@@ -1603,23 +1804,30 @@ Monitoramento automático ativado.
               ? "🟢"
               : "🔴";
 
+          const sinal =
+            variacao >= 0
+              ? "+"
+              : "";
+
           resposta = `
 📊 ${ativo.symbol}
 
 ${ativo.longName || ativo.shortName || ""}
 
 💰 Preço:
-${preco}
+${dinheiro(preco)}
 
 ${emoji} Variação:
-${variacao.toFixed(2)}%
+${sinal}${percentual(
+  variacao
+)}
 `;
         }
       }
     }
 
     // =====================================================
-    // /NOTICIAS
+    // NOTÍCIAS
     // =====================================================
 
     else if (
@@ -1649,12 +1857,12 @@ ${
 
 ✅ Monitoramento automático ativado.
 
-⏰ O bot verificará novas notícias automaticamente.
+⏰ O monitor verificará novas notícias automaticamente.
 `;
     }
 
     // =====================================================
-    // /LIMPARCARTEIRA
+    // LIMPAR CARTEIRA
     // =====================================================
 
     else if (

@@ -4,21 +4,18 @@ import { getStore } from "@netlify/blobs";
 // CONFIGURAÇÃO
 // ============================================================
 
-// Executa automaticamente a cada hora.
-// A Netlify usa UTC nos agendamentos.
 export const config = {
   schedule: "@hourly"
 };
 
-// Quantas notícias novas no máximo por ativo
 const MAX_NOTICIAS_POR_ATIVO = 2;
-
-// Quantas notícias do Ibovespa
 const MAX_NOTICIAS_IBOV = 2;
 
-// Só considera notícias publicadas recentemente.
-// Google News pode retornar algumas notícias antigas também.
 const HORAS_MAXIMAS_NOTICIA = 24;
+
+// Envia resumo da carteira uma vez por dia.
+// O monitor roda a cada hora.
+const ENVIAR_RESUMO_A_CADA_HORAS = 24;
 
 
 // ============================================================
@@ -33,9 +30,9 @@ export default async () => {
 
   try {
 
-    // --------------------------------------------------------
-    // TOKEN DO TELEGRAM
-    // --------------------------------------------------------
+    // ========================================================
+    // VARIÁVEIS
+    // ========================================================
 
     const telegramToken =
       process.env.TELEGRAM_TOKEN;
@@ -47,10 +44,6 @@ export default async () => {
     }
 
 
-    // --------------------------------------------------------
-    // CHAT ID
-    // --------------------------------------------------------
-
     const chatId =
       process.env.TELEGRAM_CHAT_ID;
 
@@ -61,9 +54,19 @@ export default async () => {
     }
 
 
-    // --------------------------------------------------------
+    const brapiToken =
+      process.env.BRAPI_TOKEN;
+
+    if (!brapiToken) {
+      throw new Error(
+        "BRAPI_TOKEN não configurado na Netlify."
+      );
+    }
+
+
+    // ========================================================
     // NETLIFY BLOBS
-    // --------------------------------------------------------
+    // ========================================================
 
     const store =
       getStore("investimentos");
@@ -72,13 +75,18 @@ export default async () => {
     const chaveCarteira =
       `carteira_${chatId}`;
 
+
     const chaveNoticias =
       `noticias_enviadas_${chatId}`;
 
 
-    // --------------------------------------------------------
+    const chaveUltimoResumo =
+      `ultimo_resumo_${chatId}`;
+
+
+    // ========================================================
     // LER CARTEIRA
-    // --------------------------------------------------------
+    // ========================================================
 
     const carteira =
       await store.get(
@@ -108,14 +116,137 @@ export default async () => {
 
 
     console.log(
-      "Ativos encontrados:",
-      carteira
+      "Carteira encontrada:",
+      JSON.stringify(carteira)
     );
 
 
-    // --------------------------------------------------------
-    // LER NOTÍCIAS JÁ ENVIADAS
-    // --------------------------------------------------------
+    // ========================================================
+    // NORMALIZAR CARTEIRA
+    // ========================================================
+
+    /*
+      Aceita os dois formatos:
+
+      Formato antigo:
+      ["BBAS3", "VALE3"]
+
+      Formato atual:
+      [
+        {
+          ticker: "BBAS3",
+          quantidade: 15,
+          precoMedio: 18.88
+        }
+      ]
+    */
+
+    const carteiraNormalizada =
+      carteira
+        .map(item => {
+
+          if (typeof item === "string") {
+
+            return {
+              ticker:
+                item.toUpperCase(),
+
+              quantidade:
+                0,
+
+              precoMedio:
+                0
+            };
+
+          }
+
+
+          if (
+            item &&
+            typeof item === "object"
+          ) {
+
+            const ticker =
+              String(
+                item.ticker ||
+                item.ativo ||
+                item.symbol ||
+                ""
+              )
+                .trim()
+                .toUpperCase();
+
+
+            const quantidade =
+              Number(
+                item.quantidade ??
+                item.qtd ??
+                item.quantity ??
+                0
+              );
+
+
+            const precoMedio =
+              Number(
+                item.precoMedio ??
+                item.preco_medio ??
+                item.preco ??
+                item.precoCompra ??
+                0
+              );
+
+
+            if (!ticker) {
+              return null;
+            }
+
+
+            return {
+              ticker,
+              quantidade,
+              precoMedio
+            };
+
+          }
+
+
+          return null;
+
+        })
+        .filter(Boolean);
+
+
+    // ========================================================
+    // SOMENTE ATIVOS COM POSIÇÃO
+    // ========================================================
+
+    const ativosComPosicao =
+      carteiraNormalizada.filter(
+        ativo =>
+          Number(ativo.quantidade) > 0
+      );
+
+
+    console.log(
+      "Ativos com posição:",
+      ativosComPosicao
+    );
+
+
+    if (
+      ativosComPosicao.length === 0
+    ) {
+
+      console.log(
+        "Nenhum ativo possui posição."
+      );
+
+    }
+
+
+    // ========================================================
+    // NOTÍCIAS JÁ ENVIADAS
+    // ========================================================
 
     let noticiasEnviadas =
       await store.get(
@@ -135,13 +266,6 @@ export default async () => {
     }
 
 
-    // --------------------------------------------------------
-    // LIMPAR HISTÓRICO ANTIGO
-    // --------------------------------------------------------
-
-    // Mantemos somente os últimos 500 IDs
-    // para o banco não crescer indefinidamente.
-
     if (
       noticiasEnviadas.length > 500
     ) {
@@ -153,107 +277,98 @@ export default async () => {
 
 
     // ========================================================
+    // ÚLTIMO RESUMO
+    // ========================================================
+
+    let ultimoResumo =
+      await store.get(
+        chaveUltimoResumo,
+        {
+          type: "json"
+        }
+      );
+
+
+    if (
+      !ultimoResumo
+    ) {
+
+      ultimoResumo = {
+        timestamp: 0
+      };
+
+    }
+
+
+    // ========================================================
     // MAPA DE EMPRESAS
     // ========================================================
 
-    // Isso melhora muito a busca.
-    // Em vez de procurar somente "BBAS3",
-    // também procuramos "Banco do Brasil".
-
     const nomesEmpresas = {
 
-      BBAS3:
-        "Banco do Brasil",
+      BBAS3: "Banco do Brasil",
 
-      PETR3:
-        "Petrobras",
+      PETR3: "Petrobras",
 
-      PETR4:
-        "Petrobras",
+      PETR4: "Petrobras",
 
-      VALE3:
-        "Vale",
+      VALE3: "Vale",
 
-      ITUB3:
-        "Itaú Unibanco",
+      ITUB3: "Itaú Unibanco",
 
-      ITUB4:
-        "Itaú Unibanco",
+      ITUB4: "Itaú Unibanco",
 
-      BBDC3:
-        "Bradesco",
+      BBDC3: "Bradesco",
 
-      BBDC4:
-        "Bradesco",
+      BBDC4: "Bradesco",
 
-      WEGE3:
-        "WEG",
+      WEGE3: "WEG",
 
-      ABEV3:
-        "Ambev",
+      ABEV3: "Ambev",
 
-      RENT3:
-        "Localiza",
+      RENT3: "Localiza",
 
-      LREN3:
-        "Lojas Renner",
+      LREN3: "Lojas Renner",
 
-      MGLU3:
-        "Magazine Luiza",
+      MGLU3: "Magazine Luiza",
 
-      PRIO3:
-        "Prio",
+      PRIO3: "Prio",
 
-      SUZB3:
-        "Suzano",
+      SUZB3: "Suzano",
 
-      ELET3:
-        "Eletrobras",
+      ELET3: "Eletrobras",
 
-      ELET6:
-        "Eletrobras",
+      ELET6: "Eletrobras",
 
-      JBSS3:
-        "JBS",
+      JBSS3: "JBS",
 
-      RADL3:
-        "Raia Drogasil",
+      RADL3: "Raia Drogasil",
 
-      VIVT3:
-        "Telefônica Brasil",
+      VIVT3: "Telefônica Brasil",
 
-      TIMS3:
-        "TIM Brasil",
+      TIMS3: "TIM Brasil",
 
-      BBSE3:
-        "BB Seguridade",
+      BBSE3: "BB Seguridade",
 
-      EGIE3:
-        "Engie Brasil",
+      EGIE3: "Engie Brasil",
 
-      CMIG4:
-        "Cemig",
+      CMIG4: "Cemig",
 
-      CPFE3:
-        "CPFL Energia",
+      CPFE3: "CPFL Energia",
 
-      SAPR11:
-        "Sanepar",
+      SAPR11: "Sanepar",
 
-      HGLG11:
-        "HGLG11",
+      HGLG11: "HGLG11",
 
-      XPML11:
-        "XPML11",
+      XPML11: "XPML11",
 
-      KNCR11:
-        "KNCR11"
+      KNCR11: "KNCR11"
 
     };
 
 
     // ========================================================
-    // FUNÇÃO PARA ESCAPAR HTML
+    // ESCAPAR HTML
     // ========================================================
 
     function escaparHTML(texto) {
@@ -262,7 +377,7 @@ export default async () => {
         return "";
       }
 
-      return texto
+      return String(texto)
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
@@ -272,7 +387,7 @@ export default async () => {
 
 
     // ========================================================
-    // DECODIFICAR ENTIDADES XML
+    // LIMPAR TEXTO
     // ========================================================
 
     function limparTexto(texto) {
@@ -295,7 +410,7 @@ export default async () => {
 
 
     // ========================================================
-    // EXTRAI TAG XML
+    // EXTRAIR TAG XML
     // ========================================================
 
     function extrairTag(
@@ -309,12 +424,15 @@ export default async () => {
           "i"
         );
 
+
       const resultado =
         bloco.match(regex);
+
 
       if (!resultado) {
         return "";
       }
+
 
       return limparTexto(
         resultado[1]
@@ -323,7 +441,7 @@ export default async () => {
 
 
     // ========================================================
-    // BUSCAR GOOGLE NEWS RSS
+    // BUSCAR NOTÍCIAS
     // ========================================================
 
     async function buscarNoticias(
@@ -385,6 +503,18 @@ export default async () => {
       const noticias = [];
 
 
+      const agora =
+        Date.now();
+
+
+      const limite =
+        agora -
+        HORAS_MAXIMAS_NOTICIA *
+        60 *
+        60 *
+        1000;
+
+
       for (
         const bloco of blocos
       ) {
@@ -424,8 +554,13 @@ export default async () => {
           );
 
 
-        if (!titulo || !link) {
+        if (
+          !titulo ||
+          !link
+        ) {
+
           continue;
+
         }
 
 
@@ -435,19 +570,15 @@ export default async () => {
             : new Date();
 
 
-        // ----------------------------------------------------
-        // FILTRO DE DATA
-        // ----------------------------------------------------
+        if (
+          Number.isNaN(
+            data.getTime()
+          )
+        ) {
 
-        const agora =
-          Date.now();
+          continue;
 
-        const limite =
-          agora -
-          HORAS_MAXIMAS_NOTICIA *
-          60 *
-          60 *
-          1000;
+        }
 
 
         if (
@@ -459,10 +590,6 @@ export default async () => {
 
         }
 
-
-        // ----------------------------------------------------
-        // ID ÚNICO
-        // ----------------------------------------------------
 
         const id =
           guid ||
@@ -547,6 +674,94 @@ export default async () => {
 
 
     // ========================================================
+    // CONSULTAR COTAÇÃO
+    // ========================================================
+
+    async function consultarCotacao(
+      ticker
+    ) {
+
+      const url =
+        `https://brapi.dev/api/quote/${encodeURIComponent(ticker)}` +
+        `?token=${encodeURIComponent(brapiToken)}`;
+
+
+      console.log(
+        `Consultando BRAPI: ${ticker}`
+      );
+
+
+      const response =
+        await fetch(
+          url
+        );
+
+
+      if (!response.ok) {
+
+        const erro =
+          await response.text();
+
+
+        console.error(
+          "BRAPI:",
+          erro
+        );
+
+
+        throw new Error(
+          `BRAPI retornou ${response.status}`
+        );
+
+      }
+
+
+      const dados =
+        await response.json();
+
+
+      if (
+        !dados.results ||
+        !dados.results.length
+      ) {
+
+        return null;
+
+      }
+
+
+      const ativo =
+        dados.results[0];
+
+
+      return {
+
+        ticker:
+          ativo.symbol,
+
+        nome:
+          ativo.longName ||
+          ativo.shortName ||
+          ativo.symbol,
+
+        preco:
+          Number(
+            ativo.regularMarketPrice ||
+            0
+          ),
+
+        variacao:
+          Number(
+            ativo.regularMarketChangePercent ||
+            0
+          )
+
+      };
+
+    }
+
+
+    // ========================================================
     // PROCESSAR NOTÍCIAS DE UM ATIVO
     // ========================================================
 
@@ -554,16 +769,17 @@ export default async () => {
       ativo
     ) {
 
+      const ticker =
+        ativo.ticker;
+
+
       const nome =
-        nomesEmpresas[ativo] ||
-        ativo;
+        nomesEmpresas[ticker] ||
+        ticker;
 
-
-      // Procuramos tanto o ticker
-      // quanto o nome da empresa.
 
       const consulta =
-        `"${ativo}" OR "${nome}"`;
+        `"${ticker}" OR "${nome}"`;
 
 
       let noticias = [];
@@ -579,7 +795,7 @@ export default async () => {
       } catch (erro) {
 
         console.error(
-          `Erro buscando ${ativo}:`,
+          `Erro buscando ${ticker}:`,
           erro
         );
 
@@ -606,10 +822,6 @@ export default async () => {
         }
 
 
-        // ----------------------------------------------------
-        // JÁ FOI ENVIADA?
-        // ----------------------------------------------------
-
         if (
           noticiasEnviadas.includes(
             noticia.id
@@ -620,10 +832,6 @@ export default async () => {
 
         }
 
-
-        // ----------------------------------------------------
-        // MONTAR MENSAGEM
-        // ----------------------------------------------------
 
         const titulo =
           escaparHTML(
@@ -664,7 +872,7 @@ export default async () => {
 
 🚨 <b>NOVA NOTÍCIA</b>
 
-📈 <b>${escaparHTML(ativo)}</b>
+📈 <b>${escaparHTML(ticker)}</b>
 
 ${titulo}
 
@@ -692,7 +900,7 @@ ${titulo}
 
 
           console.log(
-            `Notícia enviada: ${ativo} - ${noticia.titulo}`
+            `Notícia enviada: ${ticker}`
           );
 
 
@@ -775,6 +983,28 @@ ${titulo}
         }
 
 
+        const dataFormatada =
+          noticia.data.toLocaleString(
+            "pt-BR",
+            {
+              timeZone:
+                "America/Sao_Paulo",
+
+              day:
+                "2-digit",
+
+              month:
+                "2-digit",
+
+              hour:
+                "2-digit",
+
+              minute:
+                "2-digit"
+            }
+          );
+
+
         const mensagem = `
 
 🇧🇷 <b>NOVA NOTÍCIA — IBOVESPA</b>
@@ -787,27 +1017,7 @@ ${escaparHTML(
   "Google News"
 )}
 
-🕐 ${
-  noticia.data.toLocaleString(
-    "pt-BR",
-    {
-      timeZone:
-        "America/Sao_Paulo",
-
-      day:
-        "2-digit",
-
-      month:
-        "2-digit",
-
-      hour:
-        "2-digit",
-
-      minute:
-        "2-digit"
-    }
-  )
-}
+🕐 ${dataFormatada}
 
 🔗 <a href="${escaparHTML(noticia.link)}">Ler notícia</a>
 `;
@@ -851,7 +1061,222 @@ ${escaparHTML(
 
 
     // ========================================================
-    // MONITORAR TODOS OS ATIVOS
+    // RESUMO DA CARTEIRA
+    // ========================================================
+
+    async function gerarResumoCarteira() {
+
+      console.log(
+        "Gerando resumo da carteira..."
+      );
+
+
+      let totalInvestido =
+        0;
+
+
+      let patrimonio =
+        0;
+
+
+      let linhas = [];
+
+
+      for (
+        const ativo of ativosComPosicao
+      ) {
+
+        const ticker =
+          ativo.ticker;
+
+
+        const quantidade =
+          Number(
+            ativo.quantidade
+          );
+
+
+        const precoMedio =
+          Number(
+            ativo.precoMedio
+          );
+
+
+        const investido =
+          quantidade *
+          precoMedio;
+
+
+        totalInvestido +=
+          investido;
+
+
+        try {
+
+          const cotacao =
+            await consultarCotacao(
+              ticker
+            );
+
+
+          if (!cotacao) {
+
+            linhas.push(`
+
+📈 <b>${escaparHTML(ticker)}</b>
+
+Quantidade: ${quantidade}
+
+Preço médio: R$ ${precoMedio.toFixed(2)}
+
+Investido: R$ ${investido.toFixed(2)}
+
+⚠️ Cotação indisponível
+`);
+
+            continue;
+
+          }
+
+
+          const valorAtual =
+            quantidade *
+            cotacao.preco;
+
+
+          const lucro =
+            valorAtual -
+            investido;
+
+
+          const rentabilidade =
+            investido > 0
+              ? (
+                  lucro /
+                  investido
+                ) * 100
+              : 0;
+
+
+          patrimonio +=
+            valorAtual;
+
+
+          const emoji =
+            lucro >= 0
+              ? "🟢"
+              : "🔴";
+
+
+          linhas.push(`
+
+📈 <b>${escaparHTML(ticker)}</b>
+
+Quantidade: ${quantidade}
+
+Preço médio:
+R$ ${precoMedio.toFixed(2)}
+
+Preço atual:
+R$ ${cotacao.preco.toFixed(2)}
+
+Investido:
+R$ ${investido.toFixed(2)}
+
+Valor atual:
+R$ ${valorAtual.toFixed(2)}
+
+${emoji} Resultado:
+R$ ${lucro.toFixed(2)}
+
+📊 Rentabilidade:
+${rentabilidade.toFixed(2)}%
+`);
+
+        } catch (erro) {
+
+          console.error(
+            `Erro cotação ${ticker}:`,
+            erro
+          );
+
+        }
+
+      }
+
+
+      const lucroTotal =
+        patrimonio -
+        totalInvestido;
+
+
+      const rentabilidadeTotal =
+        totalInvestido > 0
+          ? (
+              lucroTotal /
+              totalInvestido
+            ) * 100
+          : 0;
+
+
+      const emojiTotal =
+        lucroTotal >= 0
+          ? "🟢"
+          : "🔴";
+
+
+      const mensagem = `
+
+📊 <b>RESUMO DA SUA CARTEIRA</b>
+
+━━━━━━━━━━━━━━━━━━
+
+${linhas.join("\n")}
+
+━━━━━━━━━━━━━━━━━━
+
+💰 <b>TOTAL INVESTIDO</b>
+
+R$ ${totalInvestido.toFixed(2)}
+
+💼 <b>PATRIMÔNIO ATUAL</b>
+
+R$ ${patrimonio.toFixed(2)}
+
+${emojiTotal} <b>LUCRO/PREJUÍZO</b>
+
+R$ ${lucroTotal.toFixed(2)}
+
+📊 <b>RENTABILIDADE</b>
+
+${rentabilidadeTotal.toFixed(2)}%
+
+━━━━━━━━━━━━━━━━━━
+
+🇧🇷 Monitorando também:
+
+IBOVESPA
+
+📰 Notícias dos seus ativos
+
+🔔 Alertas automáticos
+`;
+
+
+      await enviarTelegram(
+        mensagem
+      );
+
+
+      console.log(
+        "✅ Resumo enviado."
+      );
+
+    }
+
+
+    // ========================================================
+    // PROCESSAR NOTÍCIAS
     // ========================================================
 
     let totalEnviadas =
@@ -859,11 +1284,11 @@ ${escaparHTML(
 
 
     for (
-      const ativo of carteira
+      const ativo of ativosComPosicao
     ) {
 
       console.log(
-        `Monitorando ${ativo}...`
+        `Monitorando ${ativo.ticker}...`
       );
 
 
@@ -888,7 +1313,64 @@ ${escaparHTML(
 
 
     // ========================================================
-    // SALVAR NOTÍCIAS ENVIADAS
+    // RESUMO AUTOMÁTICO
+    // ========================================================
+
+    const agora =
+      Date.now();
+
+
+    const ultimoTimestamp =
+      Number(
+        ultimoResumo.timestamp ||
+        0
+      );
+
+
+    const horasDesdeResumo =
+      (
+        agora -
+        ultimoTimestamp
+      ) /
+      (
+        1000 *
+        60 *
+        60
+      );
+
+
+    if (
+      horasDesdeResumo >=
+      ENVIAR_RESUMO_A_CADA_HORAS
+    ) {
+
+      try {
+
+        await gerarResumoCarteira();
+
+
+        await store.setJSON(
+          chaveUltimoResumo,
+          {
+            timestamp:
+              agora
+          }
+        );
+
+      } catch (erro) {
+
+        console.error(
+          "Erro gerando resumo:",
+          erro
+        );
+
+      }
+
+    }
+
+
+    // ========================================================
+    // SALVAR NOTÍCIAS
     // ========================================================
 
     await store.setJSON(
@@ -906,11 +1388,15 @@ ${escaparHTML(
     );
 
     console.log(
-      `✅ MONITOR FINALIZADO`
+      "✅ MONITOR FINALIZADO"
     );
 
     console.log(
       `📰 Notícias enviadas: ${totalEnviadas}`
+    );
+
+    console.log(
+      `📊 Ativos monitorados: ${ativosComPosicao.length}`
     );
 
     console.log(
@@ -928,7 +1414,10 @@ ${escaparHTML(
           totalEnviadas,
 
         ativosMonitorados:
-          carteira
+          ativosComPosicao.map(
+            ativo =>
+              ativo.ticker
+          )
 
       }),
       {
@@ -938,6 +1427,7 @@ ${escaparHTML(
           "Content-Type":
             "application/json"
         }
+
       }
     );
 
