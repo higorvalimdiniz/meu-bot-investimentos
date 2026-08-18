@@ -1,5 +1,3 @@
 [build]
-  functions = "netlify/functions"
-
-[functions]
-  included_files = ["**/*.py"]
+  publish = "."
+  functions = "netlify/functions" 
