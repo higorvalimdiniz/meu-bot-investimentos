@@ -13,7 +13,7 @@ export default async (req) => {
     }
 
     // =====================================================
-    // RECEBER UPDATE
+    // UPDATE TELEGRAM
     // =====================================================
 
     const update = await req.json();
@@ -30,10 +30,10 @@ export default async (req) => {
     }
 
     const chatId = update.message.chat.id;
-    const texto = update.message.text || "";
+    const texto = (update.message.text || "").trim();
 
     // =====================================================
-    // TELEGRAM TOKEN
+    // TOKEN
     // =====================================================
 
     const token = process.env.TELEGRAM_TOKEN;
@@ -59,8 +59,11 @@ export default async (req) => {
     const chaveDividendos =
       `dividendos_${chatId}`;
 
+    const chaveNoticias =
+      `noticias_enviadas_${chatId}`;
+
     // =====================================================
-    // FUNÇÕES DO BANCO
+    // BANCO
     // =====================================================
 
     async function obterCarteira() {
@@ -124,23 +127,20 @@ export default async (req) => {
     }
 
     // =====================================================
-    // NÚMERO BRASILEIRO
+    // CONVERTER NÚMERO
     // =====================================================
 
     function converterNumero(valor) {
-      if (!valor) {
+      if (
+        valor === undefined ||
+        valor === null ||
+        valor === ""
+      ) {
         return NaN;
       }
 
-      let textoValor = String(valor).trim();
-
-      /*
-       * Se tiver ponto e vírgula:
-       * 1.234,56 -> 1234.56
-       *
-       * Se tiver apenas vírgula:
-       * 18,88 -> 18.88
-       */
+      let textoValor =
+        String(valor).trim();
 
       if (
         textoValor.includes(".") &&
@@ -177,7 +177,8 @@ export default async (req) => {
     // =====================================================
 
     function percentual(valor) {
-      const numero = Number(valor || 0);
+      const numero =
+        Number(valor || 0);
 
       return numero.toLocaleString(
         "pt-BR",
@@ -196,6 +197,7 @@ export default async (req) => {
       operacoes,
       ativo
     ) {
+
       const operacoesAtivo =
         operacoes.filter(
           (op) =>
@@ -217,21 +219,21 @@ export default async (req) => {
         ) {
 
           quantidadeComprada +=
-            Number(op.quantidade);
+            Number(op.quantidade || 0);
 
           valorComprado +=
-            Number(op.total);
+            Number(op.total || 0);
         }
 
-        else if (
+        if (
           op.tipo === "VENDA"
         ) {
 
           quantidadeVendida +=
-            Number(op.quantidade);
+            Number(op.quantidade || 0);
 
           valorVendido +=
-            Number(op.total);
+            Number(op.total || 0);
         }
       }
 
@@ -261,7 +263,7 @@ export default async (req) => {
     }
 
     // =====================================================
-    // CONSULTAR BRAPI
+    // BRAPI
     // =====================================================
 
     async function consultarBrapi(ticker) {
@@ -323,7 +325,7 @@ export default async (req) => {
     }
 
     // =====================================================
-    // ENVIAR TELEGRAM
+    // TELEGRAM
     // =====================================================
 
     async function enviarTelegram(
@@ -342,8 +344,11 @@ export default async (req) => {
             },
 
             body: JSON.stringify({
-              chat_id: chatId,
-              text: mensagem
+              chat_id:
+                chatId,
+
+              text:
+                mensagem
             })
           }
         );
@@ -384,7 +389,7 @@ Bem-vindo! 👋
 
 /carteira
 
-📥 IMPORTAR CARTEIRA EXISTENTE
+📥 IMPORTAR CARTEIRA
 
 /importar BBAS3 15 283,20
 
@@ -402,13 +407,13 @@ Bem-vindo! 👋
 
 💰 DIVIDENDO
 
-/dividendo BBAS3 15,50
+/dividendo BBAS3 25,50
 
 📜 HISTÓRICO
 
 /historico
 
-📊 RESUMO COMPLETO
+📊 RESUMO
 
 /resumo
 
@@ -416,7 +421,11 @@ Bem-vindo! 👋
 
 /noticias
 
-🗑️ LIMPAR CARTEIRA
+🗑️ REMOVER ATIVO
+
+/remover BBAS3
+
+⚠️ LIMPAR TUDO
 
 /limparcarteira
 `;
@@ -432,7 +441,6 @@ Bem-vindo! 👋
 
       const partes =
         texto
-          .trim()
           .split(/\s+/);
 
       const ativos =
@@ -473,10 +481,14 @@ Exemplo:
         ) {
 
           if (
-            !carteira.includes(ativo)
+            !carteira.includes(
+              ativo
+            )
           ) {
 
-            carteira.push(ativo);
+            carteira.push(
+              ativo
+            );
 
             adicionados.push(
               ativo
@@ -515,7 +527,7 @@ ${carteira.length} ativos
     }
 
     // =====================================================
-    // IMPORTAR
+    // IMPORTAR CARTEIRA
     // =====================================================
 
     else if (
@@ -523,9 +535,7 @@ ${carteira.length} ativos
     ) {
 
       const partes =
-        texto
-          .trim()
-          .split(/\s+/);
+        texto.split(/\s+/);
 
       if (
         partes.length < 4
@@ -612,10 +622,7 @@ ${dinheiro(
   posicao.precoMedio
 )}
 
-Para evitar duplicação,
-a importação não foi realizada.
-
-Se quiser adicionar mais ações:
+Para adicionar mais:
 
 /comprar ${ativo} QUANTIDADE PREÇO
 `;
@@ -631,17 +638,18 @@ Se quiser adicionar mais ações:
               carteira.push(
                 ativo
               );
-
-              await salvarCarteira(
-                carteira
-              );
             }
+
+            await salvarCarteira(
+              carteira
+            );
 
             const precoMedio =
               totalInvestido /
               quantidade;
 
             operacoes.push({
+
               id:
                 Date.now(),
 
@@ -695,7 +703,7 @@ ${dinheiro(
     }
 
     // =====================================================
-    // REMOVER
+    // REMOVER ATIVO
     // =====================================================
 
     else if (
@@ -703,16 +711,19 @@ ${dinheiro(
     ) {
 
       const partes =
-        texto
-          .trim()
-          .split(/\s+/);
+        texto.split(/\s+/);
 
       const ativos =
         partes
           .slice(1)
           .map(
             (ativo) =>
-              ativo.toUpperCase()
+              ativo
+                .toUpperCase()
+                .replace(
+                  /[^A-Z0-9]/g,
+                  ""
+                )
           )
           .filter(Boolean);
 
@@ -725,7 +736,7 @@ ${dinheiro(
 
 Exemplo:
 
-/remover PETR4
+/remover BBAS3
 `;
 
       } else {
@@ -733,34 +744,164 @@ Exemplo:
         let carteira =
           await obterCarteira();
 
-        carteira =
-          carteira.filter(
-            (ativo) =>
-              !ativos.includes(
-                ativo
-              )
-          );
+        let operacoes =
+          await obterOperacoes();
+
+        let dividendos =
+          await obterDividendos();
+
+        const removidos = [];
+
+        for (
+          const ativo of ativos
+        ) {
+
+          const existia =
+            carteira.includes(
+              ativo
+            );
+
+          carteira =
+            carteira.filter(
+              (item) =>
+                item !== ativo
+            );
+
+          operacoes =
+            operacoes.filter(
+              (op) =>
+                op.ativo !== ativo
+            );
+
+          dividendos =
+            dividendos.filter(
+              (div) =>
+                div.ativo !== ativo
+            );
+
+          if (existia) {
+            removidos.push(
+              ativo
+            );
+          }
+        }
 
         await salvarCarteira(
           carteira
         );
 
-        resposta = `
-🗑️ CARTEIRA ATUALIZADA
+        await salvarOperacoes(
+          operacoes
+        );
 
-Removidos:
+        await salvarDividendos(
+          dividendos
+        );
 
-${ativos
+        if (
+          removidos.length === 0
+        ) {
+
+          resposta = `
+ℹ️ Nenhum desses ativos estava cadastrado.
+
+Carteira continua com:
+${carteira.length} ativos.
+`;
+
+        } else {
+
+          resposta = `
+🗑️ ATIVOS REMOVIDOS
+
+${removidos
   .map(
     (ativo) =>
       `• ${ativo}`
   )
   .join("\n")}
 
+✅ A posição desses ativos também foi apagada.
+
 📊 Ativos restantes:
 ${carteira.length}
 `;
+        }
       }
+    }
+
+    // =====================================================
+    // LIMPAR CARTEIRA — APAGA TUDO
+    // =====================================================
+
+    else if (
+      texto === "/limparcarteira"
+    ) {
+
+      console.log(
+        "🗑️ INICIANDO LIMPEZA COMPLETA:",
+        chatId
+      );
+
+      // ===================================================
+      // APAGAR CARTEIRA
+      // ===================================================
+
+      await store.delete(
+        chaveCarteira
+      );
+
+      // ===================================================
+      // APAGAR OPERAÇÕES
+      // ===================================================
+
+      await store.delete(
+        chaveOperacoes
+      );
+
+      // ===================================================
+      // APAGAR DIVIDENDOS
+      // ===================================================
+
+      await store.delete(
+        chaveDividendos
+      );
+
+      // ===================================================
+      // APAGAR HISTÓRICO DE NOTÍCIAS
+      // ===================================================
+
+      await store.delete(
+        chaveNoticias
+      );
+
+      console.log(
+        "✅ Todos os dados apagados."
+      );
+
+      resposta = `
+🗑️ CARTEIRA TOTALMENTE LIMPA
+
+━━━━━━━━━━━━━━━━
+
+✅ Ativos removidos
+✅ Compras removidas
+✅ Vendas removidas
+✅ Dividendos removidos
+✅ Histórico de notícias removido
+
+━━━━━━━━━━━━━━━━
+
+📊 Sua carteira agora está vazia.
+
+Você pode começar novamente usando:
+
+/importar BBAS3 15 283,20
+
+ou:
+
+/adicionar BBAS3 PETR4 VALE3
+`;
     }
 
     // =====================================================
@@ -784,11 +925,17 @@ ${carteira.length}
         resposta = `
 📊 SUA CARTEIRA
 
+━━━━━━━━━━━━━━━━
+
 Nenhum ativo cadastrado.
 
 Use:
 
 /adicionar BBAS3 PETR4 VALE3
+
+ou:
+
+/importar BBAS3 15 283,20
 `;
 
       } else {
@@ -844,15 +991,14 @@ ${dinheiro(
 🔢 Quantidade:
 0
 
-💰 Preço médio:
-R$ 0,00
+⚪ Sem posição atualmente
 
 `;
           }
         }
 
         resposta += `
-━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━
 
 💰 TOTAL INVESTIDO:
 ${dinheiro(
@@ -877,9 +1023,7 @@ ${ativosComPosicao}
     ) {
 
       const partes =
-        texto
-          .trim()
-          .split(/\s+/);
+        texto.split(/\s+/);
 
       if (
         partes.length < 4
@@ -894,7 +1038,7 @@ Use:
 
 Exemplo:
 
-/comprar BBAS3 10 18,32
+/comprar BBAS3 10 18,38
 `;
 
       } else {
@@ -1004,7 +1148,7 @@ ${dinheiro(
   quantidade * preco
 )}
 
-━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━
 
 📊 POSIÇÃO ATUAL
 
@@ -1034,9 +1178,7 @@ ${dinheiro(
     ) {
 
       const partes =
-        texto
-          .trim()
-          .split(/\s+/);
+        texto.split(/\s+/);
 
       if (
         partes.length < 4
@@ -1170,7 +1312,7 @@ ${dinheiro(
   quantidade * preco
 )}
 
-━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━
 
 📊 POSIÇÃO ATUAL
 
@@ -1201,9 +1343,7 @@ ${dinheiro(
     ) {
 
       const partes =
-        texto
-          .trim()
-          .split(/\s+/);
+        texto.split(/\s+/);
 
       if (
         partes.length < 3
@@ -1353,7 +1493,7 @@ ${dinheiro(valor)}
     }
 
     // =====================================================
-    // RESUMO COMPLETO
+    // RESUMO
     // =====================================================
 
     else if (
@@ -1374,13 +1514,19 @@ ${dinheiro(valor)}
       ) {
 
         resposta = `
-📊 RESUMO
+📊 RESUMO DA CARTEIRA
+
+━━━━━━━━━━━━━━━━
 
 Sua carteira está vazia.
 
 Use:
 
 /importar BBAS3 15 283,20
+
+ou:
+
+/adicionar BBAS3 PETR4 VALE3
 `;
 
       } else {
@@ -1389,10 +1535,6 @@ Use:
         let totalAtual = 0;
 
         let detalhes = "";
-
-        // =================================================
-        // CONSULTAR TODOS OS ATIVOS
-        // =================================================
 
         for (
           const ativo of carteira
@@ -1404,7 +1546,6 @@ Use:
               ativo
             );
 
-          // Ativo cadastrado mas sem posição
           if (
             posicao.quantidadeAtual <= 0
           ) {
@@ -1413,16 +1554,13 @@ Use:
 📈 ${ativo}
 
 🔢 Quantidade: 0
+
 ⚪ Sem posição atualmente
 
 `;
 
             continue;
           }
-
-          // ===============================================
-          // CONSULTAR PREÇO ATUAL
-          // ===============================================
 
           let dadosAtual;
 
@@ -1436,9 +1574,12 @@ Use:
           } catch (erro) {
 
             console.error(
-              `Erro ao consultar ${ativo}:`,
+              `Erro ${ativo}:`,
               erro
             );
+
+            totalInvestido +=
+              posicao.valorInvestidoAtual;
 
             detalhes += `
 📈 ${ativo}
@@ -1456,17 +1597,17 @@ ${dinheiro(
   posicao.valorInvestidoAtual
 )}
 
-⚠️ Não foi possível consultar o preço atual.
+⚠️ Cotação indisponível.
 
 `;
-
-            totalInvestido +=
-              posicao.valorInvestidoAtual;
 
             continue;
           }
 
           if (!dadosAtual) {
+
+            totalInvestido +=
+              posicao.valorInvestidoAtual;
 
             detalhes += `
 📈 ${ativo}
@@ -1487,9 +1628,6 @@ ${dinheiro(
 ⚠️ Cotação não encontrada.
 
 `;
-
-            totalInvestido +=
-              posicao.valorInvestidoAtual;
 
             continue;
           }
@@ -1515,7 +1653,7 @@ ${dinheiro(
                 ) * 100
               : 0;
 
-          const emojiResultado =
+          const emoji =
             lucro >= 0
               ? "🟢"
               : "🔴";
@@ -1557,7 +1695,7 @@ ${dinheiro(
   valorAtual
 )}
 
-${emojiResultado} Resultado:
+${emoji} Resultado:
 ${sinal}${dinheiro(
   lucro
 )}
@@ -1569,10 +1707,6 @@ ${sinal}${percentual(
 
 `;
         }
-
-        // =================================================
-        // RESULTADO TOTAL
-        // =================================================
 
         const resultadoTotal =
           totalAtual -
@@ -1596,10 +1730,6 @@ ${sinal}${percentual(
             ? "+"
             : "";
 
-        // =================================================
-        // DIVIDENDOS
-        // =================================================
-
         const totalDividendos =
           dividendos.reduce(
             (
@@ -1607,23 +1737,16 @@ ${sinal}${percentual(
               div
             ) =>
               total +
-              Number(div.valor || 0),
+              Number(
+                div.valor || 0
+              ),
             0
           );
-
-        // =================================================
-        // IBOVESPA
-        // =================================================
 
         let ibovTexto =
           "⚠️ Não foi possível consultar o Ibovespa.";
 
         try {
-
-          /*
-           * A BRAPI utiliza ^BVSP para
-           * o índice Ibovespa.
-           */
 
           const ibov =
             await consultarBrapi(
@@ -1637,18 +1760,18 @@ ${sinal}${percentual(
                 ibov.regularMarketPrice || 0
               );
 
-            const variacaoIbov =
+            const variacao =
               Number(
                 ibov.regularMarketChangePercent || 0
               );
 
             const emojiIbov =
-              variacaoIbov >= 0
+              variacao >= 0
                 ? "🟢"
                 : "🔴";
 
             const sinalIbov =
-              variacaoIbov >= 0
+              variacao >= 0
                 ? "+"
                 : "";
 
@@ -1665,23 +1788,18 @@ ${pontos.toLocaleString(
 
 ${emojiIbov} Variação:
 ${sinalIbov}${percentual(
-  variacaoIbov
+  variacao
 )}
 `;
-
           }
 
         } catch (erro) {
 
           console.error(
-            "Erro ao consultar Ibovespa:",
+            "Erro Ibovespa:",
             erro
           );
         }
-
-        // =================================================
-        // MONTAR RESPOSTA
-        // =================================================
 
         resposta = `
 📊 RESUMO DA CARTEIRA
@@ -1739,9 +1857,7 @@ ${ibovTexto}
     ) {
 
       const partes =
-        texto
-          .trim()
-          .split(/\s+/);
+        texto.split(/\s+/);
 
       let ticker =
         partes[1];
@@ -1862,25 +1978,6 @@ ${
     }
 
     // =====================================================
-    // LIMPAR CARTEIRA
-    // =====================================================
-
-    else if (
-      texto === "/limparcarteira"
-    ) {
-
-      await salvarCarteira([]);
-
-      resposta = `
-🗑️ CARTEIRA LIMPA
-
-Todos os ativos foram removidos da lista.
-
-⚠️ O histórico de operações NÃO foi apagado.
-`;
-    }
-
-    // =====================================================
     // COMANDO DESCONHECIDO
     // =====================================================
 
@@ -1896,7 +1993,7 @@ Digite:
     }
 
     // =====================================================
-    // ENVIAR RESPOSTA
+    // ENVIAR
     // =====================================================
 
     await enviarTelegram(
